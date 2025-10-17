@@ -18,7 +18,7 @@ class AssistantConfig(BaseModel):
 
 AVAILABLE_ASSISTANTS: Dict[str, AssistantConfig] = {
     "Testinhos_Eletronica": AssistantConfig(
-        id="workflow",  # ID especial para o workflow
+        id="asst_xkPxad0dlthyELQDnFfweqsD",  # ID especial para o workflow
         name="Testinhos de eletronica",
         description="Indica testinhos de eletronica",
     )
@@ -82,8 +82,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Define a configuração da página
 st.set_page_config(
-    page_title="Agente Comercial",
-    page_icon=os.path.join(SCRIPT_DIR, "assets", "img", "NDados.png"),
+    page_title="Agente POLI",
     layout="centered",
     initial_sidebar_state="expanded",
 )
@@ -540,34 +539,10 @@ with st.sidebar:
     logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
 
     with logo_col2:
-        # Container para posicionamento diagonal
         st.markdown(
-            """
-            <div style="position: relative; display: flex; justify-content: center;">
-                <img src="data:image/png;base64,{}" width="100" />
-                <img src="data:image/png;base64,{}" width="60" 
-                     style="position: absolute; bottom: -30px; right: -40px;" />
-            </div>
-            """.format(
-                base64.b64encode(
-                    open(
-                        os.path.join(SCRIPT_DIR, "assets", "img", "NDados.png"), "rb"
-                    ).read()
-                ).decode(),
-                base64.b64encode(
-                    open(
-                        os.path.join(SCRIPT_DIR, "assets", "img", "Poli Junior.png"),
-                        "rb",
-                    ).read()
-                ).decode(),
-            ),
+            "<small>🚀 Agente POLI </small>",
             unsafe_allow_html=True,
         )
-
-    st.markdown(
-        "<small>🚀 Agente Comercial - NDados & Poli Junior </small>",
-        unsafe_allow_html=True,
-    )
 
 # --- Interface Principal do Chat ---
 
