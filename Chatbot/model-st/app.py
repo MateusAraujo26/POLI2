@@ -488,15 +488,36 @@ with st.sidebar:
     # Seção de upload de imagem
     st.header("📷 Anexar Imagem")
 
-    # Componente para captura de câmera (funciona melhor em dispositivos móveis)
-    camera_image = st.camera_input("📸 Capturar da câmera")
+    # Estado para controlar se a câmera está ativa
+    if "camera_active" not in st.session_state:
+        st.session_state.camera_active = False
 
-    # Upload de arquivo de imagem
-    uploaded_file = st.file_uploader(
-        "📁 Ou escolher da galeria",
-        type=["png", "jpg", "jpeg", "gif", "bmp"],
-        help="Formatos suportados: PNG, JPG, JPEG, GIF, BMP",
-    )
+    # Botões para escolher o método de captura
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("📸 Abrir Câmera", use_container_width=True):
+            st.session_state.camera_active = True
+            st.rerun()
+
+    with col2:
+        # Upload de arquivo de imagem
+        uploaded_file = st.file_uploader(
+            "📁 Galeria",
+            type=["png", "jpg", "jpeg", "gif", "bmp"],
+            help="Formatos suportados: PNG, JPG, JPEG, GIF, BMP",
+        )
+
+    # Componente para captura de câmera (só aparece se ativado)
+    camera_image = None
+    if st.session_state.camera_active:
+        st.info("📷 Câmera ativada - tire sua foto abaixo:", icon="ℹ️")
+        camera_image = st.camera_input("📸 Capturar foto")
+
+        # Botão para fechar a câmera
+        if st.button("❌ Fechar Câmera", use_container_width=True):
+            st.session_state.camera_active = False
+            st.rerun()
 
     # Processa a imagem capturada ou enviada
     current_image = camera_image or uploaded_file
@@ -512,10 +533,15 @@ with st.sidebar:
             st.session_state.uploaded_image = current_image
             st.success("✅ Imagem pronta para envio!")
 
+            # Se capturou da câmera, desativa automaticamente
+            if camera_image is not None:
+                st.session_state.camera_active = False
+
         # Botão para limpar imagem
         if st.button("🗑️ Remover imagem", use_container_width=True):
             st.session_state.uploaded_image = None
             st.session_state.image_data = None
+            st.session_state.camera_active = False
             st.rerun()
 
     elif st.session_state.uploaded_image is not None:
@@ -528,8 +554,18 @@ with st.sidebar:
         if st.button("🗑️ Remover imagem", use_container_width=True):
             st.session_state.uploaded_image = None
             st.session_state.image_data = None
+            st.session_state.camera_active = False
             st.rerun()
 
+    # No botão "Nova Conversa", adicione também o reset da câmera
+    if st.button("＋ Nova Conversa", use_container_width=True):
+        # Reseta o estado da conversa para iniciar um novo chat
+        st.session_state.messages = []
+        st.session_state.thread_id = None
+        st.session_state.uploaded_image = None
+        st.session_state.image_data = None
+        st.session_state.camera_active = False  # Adicione esta linha
+        st.rerun()
     st.markdown("---")
 
     # Espaçador para empurrar os logos para o final
