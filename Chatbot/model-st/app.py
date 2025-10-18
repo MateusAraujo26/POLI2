@@ -395,6 +395,59 @@ p, div, span, label {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
 }
+
+/* Estilo para o botão de anexar (+) */
+.attachment-button {
+    position: fixed;
+    bottom: 80px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-purple), var(--purple-light));
+    color: white !important;
+    border: none;
+    font-size: 24px;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(140, 82, 255, 0.4);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+.attachment-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(140, 82, 255, 0.5);
+}
+
+/* Menu de opções de anexo */
+.attachment-menu {
+    position: fixed;
+    bottom: 140px;
+    left: 20px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 8px 30px rgba(140, 82, 255, 0.3);
+    padding: 1rem;
+    z-index: 999;
+    min-width: 200px;
+    border: 2px solid var(--purple-ultra-light);
+}
+
+/* Ajuste para mobile */
+@media (max-width: 768px) {
+    .attachment-button {
+        left: 10px;
+        bottom: 70px;
+    }
+    
+    .attachment-menu {
+        left: 10px;
+        bottom: 130px;
+        width: calc(100% - 20px);
+        max-width: 300px;
+    }
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -435,6 +488,9 @@ if "uploaded_image" not in st.session_state:
 
 if "image_data" not in st.session_state:
     st.session_state.image_data = None
+
+if "attachment_menu_open" not in st.session_state:
+    st.session_state.attachment_menu_open = False
 
 
 # --- Interface da Sidebar (de index.html) ---
@@ -490,83 +546,8 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Seção de upload de imagem
-    st.header("📷 Anexar Imagem")
-
-    # Estado para controlar se a câmera está ativa
-    if "camera_active" not in st.session_state:
-        st.session_state.camera_active = False
-
-    # Botões para escolher o método de captura
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("📸 Abrir Câmera", use_container_width=True, key="open_camera"):
-            st.session_state.camera_active = True
-            st.rerun()
-
-    with col2:
-        # Upload de arquivo de imagem
-        uploaded_file = st.file_uploader(
-            "📁 Galeria",
-            type=["png", "jpg", "jpeg", "gif", "bmp"],
-            help="Formatos suportados: PNG, JPG, JPEG, GIF, BMP",
-        )
-
-    # Componente para captura de câmera (só aparece se ativado)
-    camera_image = None
-    if st.session_state.camera_active:
-        st.info("📷 Câmera ativada - tire sua foto abaixo:", icon="ℹ️")
-        camera_image = st.camera_input("📸 Capturar foto")
-
-        # Botão para fechar a câmera
-        if st.button("❌ Fechar Câmera", use_container_width=True, key="close_camera"):
-            st.session_state.camera_active = False
-            st.rerun()
-
-    # Processa a imagem capturada ou enviada
-    current_image = camera_image or uploaded_file
-
-    if current_image is not None:
-        # Mostra prévia da imagem
-        st.image(current_image, caption="Imagem selecionada", use_column_width=True)
-
-        # Processa a imagem
-        image_data = process_image(current_image)
-        if image_data:
-            st.session_state.image_data = image_data
-            st.session_state.uploaded_image = current_image
-            st.success("✅ Imagem pronta para envio!")
-
-            # Se capturou da câmera, desativa automaticamente
-            if camera_image is not None:
-                st.session_state.camera_active = False
-
-        # Botão para limpar imagem
-        if st.button(
-            "🗑️ Remover imagem", use_container_width=True, key="remove_image_1"
-        ):
-            st.session_state.uploaded_image = None
-            st.session_state.image_data = None
-            st.session_state.camera_active = False
-            st.rerun()
-
-    elif st.session_state.uploaded_image is not None:
-        # Mostra a imagem já carregada
-        st.image(
-            st.session_state.uploaded_image,
-            caption="Imagem anexada",
-            use_column_width=True,
-        )
-        if st.button(
-            "🗑️ Remover imagem", use_container_width=True, key="remove_image_2"
-        ):
-            st.session_state.uploaded_image = None
-            st.session_state.image_data = None
-            st.session_state.camera_active = False
-            st.rerun()
-
-    st.markdown("---")
+    # Remover a seção de upload de imagem da sidebar
+    # A funcionalidade foi movida para o botão "+" ao lado do input
 
     # Espaçador para empurrar os logos para o final
     st.markdown("<br>" * 5, unsafe_allow_html=True)
@@ -606,6 +587,88 @@ for msg in st.session_state.messages:
             st.image(msg["image"], caption="Imagem enviada", width=300)
         st.markdown(msg["content"])
 
+# --- Menu de Anexos (acima do input de chat) ---
+# Botão "+" para abrir/fechar menu de anexos
+col_attach, col_spacer = st.columns([1, 9])
+
+with col_attach:
+    if st.button(
+        "➕" if not st.session_state.attachment_menu_open else "✖️",
+        key="toggle_attachment_menu",
+        help="Anexar imagem",
+    ):
+        st.session_state.attachment_menu_open = (
+            not st.session_state.attachment_menu_open
+        )
+        st.rerun()
+
+# Menu de opções de anexo (aparece quando o botão é clicado)
+if st.session_state.attachment_menu_open:
+    with st.container():
+        st.markdown("#### 📎 Anexar Imagem")
+
+        # Botões para escolher o método de captura
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("📸 Câmera", use_container_width=True, key="open_camera_main"):
+                st.session_state.camera_active = True
+                st.session_state.attachment_menu_open = False
+                st.rerun()
+
+        with col2:
+            # Upload de arquivo de imagem
+            uploaded_file = st.file_uploader(
+                "📁 Galeria",
+                type=["png", "jpg", "jpeg", "gif", "bmp"],
+                help="Formatos suportados: PNG, JPG, JPEG, GIF, BMP",
+                key="file_uploader_main",
+                label_visibility="collapsed",
+            )
+
+        # Se um arquivo foi enviado
+        if uploaded_file is not None:
+            image_data = process_image(uploaded_file)
+            if image_data:
+                st.session_state.image_data = image_data
+                st.session_state.uploaded_image = uploaded_file
+                st.session_state.attachment_menu_open = False
+                st.success("✅ Imagem anexada!")
+                st.rerun()
+
+        st.markdown("---")
+
+# Componente para captura de câmera (aparece em tela cheia quando ativado)
+if st.session_state.camera_active:
+    st.info("📷 Câmera ativada - tire sua foto:", icon="ℹ️")
+    camera_image = st.camera_input("📸 Capturar foto", key="camera_input_main")
+
+    col_cancel, col_confirm = st.columns(2)
+
+    with col_cancel:
+        if st.button("❌ Cancelar", use_container_width=True, key="cancel_camera_main"):
+            st.session_state.camera_active = False
+            st.rerun()
+
+    # Se uma foto foi capturada
+    if camera_image is not None:
+        image_data = process_image(camera_image)
+        if image_data:
+            st.session_state.image_data = image_data
+            st.session_state.uploaded_image = camera_image
+            st.session_state.camera_active = False
+            st.success("✅ Foto capturada!")
+            time.sleep(1)
+            st.rerun()
+
+# Mostra prévia da imagem anexada (se houver)
+if st.session_state.uploaded_image is not None and not st.session_state.camera_active:
+    with st.expander("🖼️ Imagem anexada", expanded=False):
+        st.image(st.session_state.uploaded_image, use_column_width=True)
+        if st.button("🗑️ Remover imagem", key="remove_image_main"):
+            st.session_state.uploaded_image = None
+            st.session_state.image_data = None
+            st.rerun()
 
 # Input do usuário (substitui o <textarea> e <button>)
 if prompt := st.chat_input("Digite sua mensagem aqui..."):
