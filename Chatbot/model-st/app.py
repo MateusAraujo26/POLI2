@@ -441,12 +441,13 @@ if "image_data" not in st.session_state:
 with st.sidebar:
     st.title("💬 Agente POLI")
 
-    if st.button("＋ Nova Conversa", use_container_width=True):
+    if st.button("＋ Nova Conversa", use_container_width=True, key="new_chat_top"):
         # Reseta o estado da conversa para iniciar um novo chat
         st.session_state.messages = []
         st.session_state.thread_id = None
         st.session_state.uploaded_image = None
         st.session_state.image_data = None
+        st.session_state.camera_active = False
         st.rerun()
 
     st.header("⚙️ Configurações")
@@ -467,7 +468,11 @@ with st.sidebar:
     if selected_assistant_key != st.session_state.assistant_key:
         if st.session_state.messages:  # Se já houver mensagens
             st.warning("Mudar de assistente irá iniciar uma nova conversa.", icon="⚠️")
-            if st.button("Confirmar e iniciar nova conversa", use_container_width=True):
+            if st.button(
+                "Confirmar e iniciar nova conversa",
+                use_container_width=True,
+                key="confirm_assistant_change",
+            ):
                 st.session_state.assistant_key = selected_assistant_key
                 st.session_state.messages = []
                 st.session_state.thread_id = None
@@ -496,7 +501,7 @@ with st.sidebar:
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("📸 Abrir Câmera", use_container_width=True):
+        if st.button("📸 Abrir Câmera", use_container_width=True, key="open_camera"):
             st.session_state.camera_active = True
             st.rerun()
 
@@ -515,7 +520,7 @@ with st.sidebar:
         camera_image = st.camera_input("📸 Capturar foto")
 
         # Botão para fechar a câmera
-        if st.button("❌ Fechar Câmera", use_container_width=True):
+        if st.button("❌ Fechar Câmera", use_container_width=True, key="close_camera"):
             st.session_state.camera_active = False
             st.rerun()
 
@@ -538,7 +543,9 @@ with st.sidebar:
                 st.session_state.camera_active = False
 
         # Botão para limpar imagem
-        if st.button("🗑️ Remover imagem", use_container_width=True):
+        if st.button(
+            "🗑️ Remover imagem", use_container_width=True, key="remove_image_1"
+        ):
             st.session_state.uploaded_image = None
             st.session_state.image_data = None
             st.session_state.camera_active = False
@@ -551,21 +558,14 @@ with st.sidebar:
             caption="Imagem anexada",
             use_column_width=True,
         )
-        if st.button("🗑️ Remover imagem", use_container_width=True):
+        if st.button(
+            "🗑️ Remover imagem", use_container_width=True, key="remove_image_2"
+        ):
             st.session_state.uploaded_image = None
             st.session_state.image_data = None
             st.session_state.camera_active = False
             st.rerun()
 
-    # No botão "Nova Conversa", adicione também o reset da câmera
-    if st.button("＋ Nova Conversa", use_container_width=True):
-        # Reseta o estado da conversa para iniciar um novo chat
-        st.session_state.messages = []
-        st.session_state.thread_id = None
-        st.session_state.uploaded_image = None
-        st.session_state.image_data = None
-        st.session_state.camera_active = False  # Adicione esta linha
-        st.rerun()
     st.markdown("---")
 
     # Espaçador para empurrar os logos para o final
