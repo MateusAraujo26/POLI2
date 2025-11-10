@@ -8,8 +8,8 @@ peso_p3 = 3.5
 peso_testinhos = 2
 
 # Notas obtidas
-nota_p1 = 3
-nota_testinhos = 6
+nota_p1 = 2.4
+nota_testinhos = 4
 
 # Meta de média
 media_desejada = 4.95
