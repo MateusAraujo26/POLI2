@@ -11,8 +11,6 @@ import openai
 from pydantic import BaseModel
 from PIL import Image
 import google.generativeai as genai
-from google.generativeai import types
-
 
 # --- Configuração da Aplicação ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -100,7 +98,16 @@ def process_with_gpt(
 
         if run.status == "completed":
             messages = client.beta.threads.messages.list(thread_id=thread_id)
-            response = messages.data[0].content[0].text.value
+            # Find the first text content block
+            response = None
+            for content_block in messages.data[0].content:
+                if content_block.type == "text":
+                    response = content_block.text.value
+                    break
+
+            if response is None:
+                return {"success": False, "error": "No text content in response"}
+
             return {"success": True, "response": response, "thread_id": thread_id}
         else:
             return {"success": False, "error": f"Run status: {run.status}"}
@@ -252,7 +259,16 @@ Forneça uma resposta consolidada que combine os melhores aspectos de ambas as a
 
         if run.status == "completed":
             messages = client.beta.threads.messages.list(thread_id=thread.id)
-            response = messages.data[0].content[0].text.value
+            # Find the first text content block
+            response = None
+            for content_block in messages.data[0].content:
+                if content_block.type == "text":
+                    response = content_block.text.value
+                    break
+
+            if response is None:
+                return {"success": False, "error": "No text content in response"}
+
             return {"success": True, "response": response}
         else:
             return {"success": False, "error": f"Run status: {run.status}"}
@@ -877,7 +893,7 @@ if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
     message_data = {"role": "user", "content": message_content}
 
     # Se há imagem anexada, adiciona à mensagem
-    if st.session_state.image_data:
+    if st.session_state.image_data and st.session_state.uploaded_image is not None:
         message_data["image"] = st.session_state.uploaded_image
         message_content = f"[Imagem anexada] {prompt}"
 
@@ -886,7 +902,7 @@ if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
     with st.chat_message(
         "user", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "user.png")
     ):
-        if st.session_state.image_data:
+        if st.session_state.image_data and st.session_state.uploaded_image is not None:
             st.image(
                 st.session_state.uploaded_image, caption="Imagem enviada", width=300
             )
