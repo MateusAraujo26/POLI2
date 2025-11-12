@@ -1,11 +1,14 @@
 import os
 import io
 import base64
-from typing import List, Dict, Any, Union, Optional, Sequence
+from typing import List, Dict, Any, Sequence, cast
 import streamlit as st
 from openai import OpenAI
 from PIL import Image
 
+# -------------------------------------------------------------------
+# Configuração básica
+# -------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 st.set_page_config(
@@ -144,22 +147,64 @@ h1, h2, h3 {
     unsafe_allow_html=True,
 )
 
+
+# -------------------------------------------------------------------
+# Cliente OpenAI
+# -------------------------------------------------------------------
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 except Exception:
     st.error("⚠️ Configure OPENAI_API_KEY em st.secrets.", icon="🚨")
     st.stop()
 
+# -------------------------------------------------------------------
+# Instruções do agente (system/instructions)
+# -------------------------------------------------------------------
+AGENT_INSTRUCTIONS = """Você é um especialista em análise e resolução de circuitos elétricos com acesso a um banco de provas anteriores.
+
+OBJETIVO:
+Analisar circuitos elétricos apresentados em imagens e fornecer soluções detalhadas e precisas.
+
+METODOLOGIA:
+1. Identifique todos os componentes do circuito (resistores, capacitores, indutores, fontes, etc.)
+2. Reconheça a topologia (série, paralelo, mista)
+3. Consulte padrões de provas anteriores quando possível
+4. Aplique as leis e teoremas (Ohm, Kirchhoff, Thévenin, Norton, divisor de tensão/corrente etc.)
+5. Calcule passo a passo com organização
+6. Apresente resultados com unidades corretas
+
+FORMATO DE RESPOSTA:
+## Análise do Circuito
+## Dados Fornecidos
+## Estratégia de Resolução
+## Cálculos Detalhados
+## Resultado Final
+## Verificação
+
+DIRETRIZES:
+- Mostrar todos os passos intermediários
+- Verificar coerência dimensional
+- Notação científica quando apropriado
+- Se existir mais de uma abordagem, mencionar
+- Ser conciso e exato nos valores finais
+"""
+
+# -------------------------------------------------------------------
 # Estado
+# -------------------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "uploaded_image_bytes" not in st.session_state:
     st.session_state.uploaded_image_bytes = None
 if "image_data_uri" not in st.session_state:
     st.session_state.image_data_uri = None
+if "debug" not in st.session_state:
+    st.session_state.debug = False
 
 
+# -------------------------------------------------------------------
 # Utils
+# -------------------------------------------------------------------
 def process_image_to_data_uri(image: Image.Image) -> str:
     try:
         max_size = (1024, 1024)
@@ -170,12 +215,11 @@ def process_image_to_data_uri(image: Image.Image) -> str:
         b64 = base64.b64encode(buf.getvalue()).decode()
         return f"data:image/png;base64,{b64}"
     except Exception as e:
-        st.error(f"Erro imagem: {e}")
+        st.error(f"Erro ao preparar imagem: {e}", icon="🚨")
         return ""
 
 
 def upload_image_and_get_file_id(data_uri: str) -> str:
-    # data_uri: data:image/png;base64,...
     try:
         if "," in data_uri:
             b64_part = data_uri.split(",", 1)[1]
@@ -187,72 +231,119 @@ def upload_image_and_get_file_id(data_uri: str) -> str:
         up = client.files.create(file=bio, purpose="vision")
         return up.id
     except Exception as e:
-        st.error(f"Upload falhou: {e}", icon="🚨")
+        st.error(f"Falha upload imagem: {e}", icon="🚨")
         return ""
 
 
-def build_response_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_response_input(messages: List[Dict[str, Any]]) -> Sequence[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for m in messages:
         if m["role"] == "user":
-            content_parts = [{"type": "input_text", "text": m["content"]}]
-            # Se tiver file_id (já enviado)
+            parts = [{"type": "input_text", "text": m["content"]}]
             if "image_file_id" in m:
-                content_parts.append(
+                parts.append(
                     {
                         "type": "input_image",
                         "image_file": {"file_id": m["image_file_id"]},
                     }
                 )
-            items.append({"role": "user", "content": content_parts})
+            items.append({"role": "user", "content": parts})
         elif m["role"] == "assistant":
-            content_parts = [{"type": "output_text", "text": m["content"]}]
-            items.append({"role": "assistant", "content": content_parts})
+            items.append(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": m["content"]}],
+                }
+            )
     return items
 
 
 def call_agent(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
+        payload = build_response_input(messages)
         response = client.responses.create(
             model="o1-pro",
+            instructions=AGENT_INSTRUCTIONS,
             reasoning={"effort": "high"},
             store=True,
-            input=build_response_input(messages),  # type: ignore
+            input=cast(Any, payload),
         )
-        # Extrai texto de saída
-        out_text_parts = []
+        out_chunks: List[str] = []
         for item in getattr(response, "output", []) or []:
             for c in getattr(item, "content", []) or []:
-                if c.type == "output_text":
-                    out_text_parts.append(c.text)
-        full_text = "\n".join(out_text_parts).strip() or getattr(
-            response, "output_text", ""
+                if getattr(c, "type", None) == "output_text":
+                    out_chunks.append(getattr(c, "text", ""))
+        full_text = (
+            "\n".join(out_chunks).strip()
+            or getattr(response, "output_text", "").strip()
         )
 
-        # Responses API does not return reasoning content
-        return {"success": True, "content": full_text, "reasoning": None}
+        reasoning_text = None
+        if hasattr(response, "reasoning") and response.reasoning:
+            r_parts = []
+            for rc in getattr(response.reasoning, "content", []) or []:
+                if getattr(rc, "type", None) == "output_text":
+                    r_parts.append(getattr(rc, "text", ""))
+            reasoning_text = "\n".join(r_parts).strip() or None
+
+        return {
+            "success": True,
+            "content": full_text,
+            "reasoning": reasoning_text,
+            "raw": response.model_dump() if st.session_state.debug else None,
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+# -------------------------------------------------------------------
 # Sidebar
+# -------------------------------------------------------------------
 with st.sidebar:
     st.title("💬 Agente POLI")
-    st.caption("Especialista em Circuitos Elétricos (O1-Pro)")
-    if st.button("＋ Nova Conversa", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.uploaded_image_bytes = None
-        st.session_state.image_data_uri = None
-        st.rerun()
+    st.caption("Especialista em Circuitos Elétricos")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("＋ Nova", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.uploaded_image_bytes = None
+            st.session_state.image_data_uri = None
+            st.rerun()
+    with col_b:
+        if st.button(
+            "Debug ON" if not st.session_state.debug else "Debug OFF",
+            use_container_width=True,
+        ):
+            st.session_state.debug = not st.session_state.debug
+            st.rerun()
     st.markdown("---")
     if st.session_state.messages:
-        count = sum(1 for m in st.session_state.messages if m["role"] == "user")
-        st.metric("📊 Questões Resolvidas", count)
+        st.metric(
+            "📊 Perguntas",
+            sum(1 for m in st.session_state.messages if m["role"] == "user"),
+        )
+    if st.session_state.debug:
+        st.markdown("### Estado")
+        st.json(
+            {
+                "messages_total": len(st.session_state.messages),
+                "last_user_has_image": any(
+                    m.get("image_file_id")
+                    for m in reversed(st.session_state.messages)
+                    if m["role"] == "user"
+                ),
+            }
+        )
 
-st.markdown("### 🎯 Resolvedor de Circuitos Elétricos")
-st.caption("Use texto e opcionalmente imagem do circuito.")
+# -------------------------------------------------------------------
+# Header
+# -------------------------------------------------------------------
+st.markdown("### 🎯 Resolvedor de Circuitos")
+st.caption("Envie texto e/ou imagem para obter análise detalhada.")
 
+# -------------------------------------------------------------------
 # Histórico
+# -------------------------------------------------------------------
 for m in st.session_state.messages:
     avatar = (
         os.path.join(SCRIPT_DIR, "assets", "img", "user.png")
@@ -260,46 +351,64 @@ for m in st.session_state.messages:
         else os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     )
     with st.chat_message(m["role"], avatar=avatar):
-        if "image_bytes" in m and m["image_bytes"] is not None:
+        if "image_bytes" in m:
             st.image(m["image_bytes"], caption="Circuito", width=300)
         st.markdown(m["content"])
         if m["role"] == "assistant" and m.get("reasoning"):
             with st.expander("🧠 Raciocínio"):
                 st.markdown(m["reasoning"])
 
-# Upload imagem
+# -------------------------------------------------------------------
+# Upload de imagem
+# -------------------------------------------------------------------
 uploaded = st.file_uploader(
-    "📁 Anexar imagem do circuito",
+    "📁 Imagem do circuito (opcional)",
     type=["png", "jpg", "jpeg"],
-    help="Formatos suportados.",
+    help="Formatos: PNG, JPG, JPEG",
 )
 if uploaded:
-    raw_bytes = uploaded.read()
-    st.session_state.uploaded_image_bytes = raw_bytes
-    img = Image.open(io.BytesIO(raw_bytes))
-    st.session_state.image_data_uri = process_image_to_data_uri(img)
-    st.success("Imagem pronta para envio.")
+    raw = uploaded.read()
+    img = Image.open(io.BytesIO(raw))
+    data_uri = process_image_to_data_uri(img)
+    if data_uri:
+        st.session_state.uploaded_image_bytes = raw
+        st.session_state.image_data_uri = data_uri
+        st.success("Imagem pronta.")
 if st.session_state.uploaded_image_bytes:
-    with st.expander("🖼️ Prévia da imagem", expanded=False):
+    with st.expander("🖼️ Prévia da imagem"):
         st.image(st.session_state.uploaded_image_bytes, use_container_width=True)
         if st.button("Remover imagem"):
             st.session_state.uploaded_image_bytes = None
             st.session_state.image_data_uri = None
             st.rerun()
 
-# Entrada usuário
-prompt = st.chat_input("Digite sua pergunta...")
-if prompt:
-    user_msg: Dict[str, Union[str, bytes, Optional[bytes], Any]] = {
-        "role": "user",
-        "content": prompt,
-    }
-    # Se houver imagem anexada, subir agora e guardar file_id
+# Botão para enviar só imagem (sem texto)
+send_only_image = False
+if st.session_state.image_data_uri:
+    if st.button("Enviar só a imagem"):
+        send_only_image = True
+
+# -------------------------------------------------------------------
+# Entrada de texto
+# -------------------------------------------------------------------
+prompt = st.chat_input("Digite sua pergunta (ou use 'Enviar só a imagem')...")
+
+should_send = send_only_image or (prompt is not None and prompt.strip() != "")
+
+if should_send:
+    if send_only_image and (not prompt or prompt.strip() == ""):
+        prompt = "Analise detalhadamente o circuito fornecido na imagem e resolva o(s) problema(s) implicados."
+
+    user_msg: Dict[str, Any] = {"role": "user", "content": prompt}
+
     if st.session_state.image_data_uri:
         file_id = upload_image_and_get_file_id(st.session_state.image_data_uri)
-        if file_id:
+        if not file_id:
+            st.error("Falha no upload da imagem. Abortando envio.", icon="🚨")
+        else:
             user_msg["image_file_id"] = file_id
             user_msg["image_bytes"] = st.session_state.uploaded_image_bytes
+
     st.session_state.messages.append(user_msg)
 
     with st.chat_message(
@@ -307,19 +416,22 @@ if prompt:
     ):
         if "image_bytes" in user_msg and user_msg["image_bytes"] is not None:
             st.image(user_msg["image_bytes"], caption="Circuito", width=300)
-        st.markdown(prompt)
+        st.markdown(user_msg["content"])
 
-    # Chamada ao modelo
     with st.chat_message(
         "assistant", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     ):
-        with st.spinner("Analisando..."):
+        with st.spinner("Analisando circuito..."):
             result = call_agent(st.session_state.messages)
+
         if result["success"]:
             st.markdown(result["content"])
             if result.get("reasoning"):
-                with st.expander("🧠 Raciocínio"):
+                with st.expander("🧠 Raciocínio do modelo"):
                     st.markdown(result["reasoning"])
+            if st.session_state.debug and result.get("raw"):
+                with st.expander("🔍 Raw response"):
+                    st.json(result["raw"])
             st.session_state.messages.append(
                 {
                     "role": "assistant",
@@ -328,9 +440,15 @@ if prompt:
                 }
             )
         else:
-            st.error(f"Erro: {result['error']}", icon="🚨")
+            st.error(f"Erro na requisição: {result['error']}", icon="🚨")
+            if st.session_state.debug:
+                st.write("Payload enviado:")
+                st.json(build_response_input(st.session_state.messages))
 
-    # Limpa imagem após envio
+    # Limpa imagem após tentativa (mantém se quiser depurar erro)
     st.session_state.uploaded_image_bytes = None
     st.session_state.image_data_uri = None
-    st.rerun()
+
+    # Re-render somente se sucesso (para não perder estado de debug em erro)
+    if result.get("success"):
+        st.rerun()
