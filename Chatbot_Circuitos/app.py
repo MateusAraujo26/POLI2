@@ -764,11 +764,6 @@ with st.sidebar:
 st.markdown("### 🎯 Resolvedor de Circuitos Multi-Agente")
 st.caption("Análise paralela com GPT e Gemini, consolidada por IA especialista")
 
-assistant_info = AVAILABLE_ASSISTANTS[st.session_state.assistant_key]
-
-# Header do Chat
-st.markdown(f"### {assistant_info.name}")
-
 # Indicador de imagem anexada
 if st.session_state.image_data:
     st.info("📷 Imagem anexada - será enviada com a próxima mensagem", icon="ℹ️")
