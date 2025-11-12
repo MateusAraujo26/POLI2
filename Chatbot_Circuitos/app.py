@@ -61,11 +61,25 @@ def process_with_gpt(
 
         # Prepara o conteúdo da mensagem
         if image_data:
+            # Remove o prefixo "data:image/png;base64," se existir
+            if "base64," in image_data:
+                base64_data = image_data.split("base64,")[1]
+            else:
+                base64_data = image_data
+
+            # Upload da imagem para OpenAI
+            image_bytes = base64.b64decode(base64_data)
+            image_file = io.BytesIO(image_bytes)
+            image_file.name = "circuit_image.png"
+
+            # Faz upload do arquivo
+            uploaded_file = client.files.create(file=image_file, purpose="vision")
+
             api_message_content = [
                 {"type": "text", "text": prompt},
                 {
-                    "type": "image_url",
-                    "image_url": {"url": image_data, "detail": "high"},
+                    "type": "image_file",
+                    "image_file": {"file_id": uploaded_file.id},
                 },
             ]
         else:
@@ -98,7 +112,8 @@ def process_with_gpt(
 def process_with_gemini(prompt: str, image_data: str | None = None) -> dict:
     """Processa a mensagem com o Gemini"""
     try:
-        gemini_client = genai.Client(
+        # Configura o Gemini
+        genai.configure(
             api_key=st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
         )
 
@@ -161,6 +176,13 @@ REGRAS IMPORTANTES:
 - Seja transparente sobre limitações da sua análise
 """
 
+        # Cria o modelo com configuração
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash-exp",
+            system_instruction=system_instruction,
+        )
+
+        # Prepara o conteúdo
         contents = []
 
         if image_data:
@@ -168,38 +190,23 @@ REGRAS IMPORTANTES:
             if image_data.startswith("data:image"):
                 image_data = image_data.split(",")[1]
 
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=prompt),
-                        types.Part.from_inline_data(
-                            mime_type="image/png", data=base64.b64decode(image_data)
-                        ),
-                    ],
-                )
-            )
-        else:
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=prompt)],
-                )
-            )
+            # Decodifica a imagem
+            image_bytes = base64.b64decode(image_data)
 
-        generate_content_config = types.GenerateContentConfig(
-            temperature=0.7,
-            thinking_config=types.ThinkingConfig(
-                thinking_budget=-1,
-            ),
-            system_instruction=[types.Part.from_text(text=system_instruction)],
-        )
+            # Cria a imagem PIL
+            image = Image.open(io.BytesIO(image_bytes))
+
+            # Adiciona texto e imagem
+            contents = [prompt, image]
+        else:
+            contents = [prompt]
 
         # Gera resposta
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=contents,
-            config=generate_content_config,
+        response = model.generate_content(
+            contents,
+            generation_config={
+                "temperature": 0.7,
+            },
         )
 
         return {"success": True, "response": response.text}
