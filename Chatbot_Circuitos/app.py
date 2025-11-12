@@ -316,8 +316,9 @@ for msg in st.session_state.messages:
         else os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     )
     with st.chat_message(msg["role"], avatar=avatar_img):
-        if "image" in msg:
-            st.image(msg["image"], caption="Imagem enviada", width=300)
+        # Exibe imagem dos bytes salvos (não do objeto de arquivo)
+        if "image_bytes" in msg:
+            st.image(msg["image_bytes"], caption="Imagem enviada", width=300)
         st.markdown(msg["content"])
 
         # Mostra raciocínio se disponível
@@ -351,7 +352,7 @@ if uploaded_file is not None:
 # Prévia da imagem anexada
 if st.session_state.uploaded_image is not None:
     with st.expander("🖼️ Imagem anexada", expanded=False):
-        st.image(st.session_state.uploaded_image, use_column_width=True)
+        st.image(st.session_state.uploaded_image, use_container_width=True)
         if st.button("🗑️ Remover imagem", key="remove_image"):
             st.session_state.uploaded_image = None
             st.session_state.image_data = None
@@ -362,10 +363,24 @@ if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
     # Prepara a mensagem do usuário
     user_message = {"role": "user", "content": prompt}
 
+    # Salva uma cópia da imagem antes de limpar
+    current_image = st.session_state.uploaded_image
+    current_image_data = st.session_state.image_data
+
     # Adiciona imagem se houver
-    if st.session_state.image_data:
-        user_message["image_data"] = st.session_state.image_data
-        user_message["image"] = st.session_state.uploaded_image
+    if current_image_data:
+        user_message["image_data"] = current_image_data
+        # Converte a imagem para bytes para salvar no histórico
+        if hasattr(current_image, "read"):
+            current_image.seek(0)  # Volta ao início do arquivo
+            image_bytes = current_image.read()
+            user_message["image_bytes"] = image_bytes
+            current_image.seek(0)  # Volta ao início novamente
+        else:
+            # Se já for uma imagem PIL
+            buffered = io.BytesIO()
+            current_image.save(buffered, format="PNG")
+            user_message["image_bytes"] = buffered.getvalue()
 
     # Adiciona ao histórico
     st.session_state.messages.append(user_message)
@@ -374,9 +389,14 @@ if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
     with st.chat_message(
         "user", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "user.png")
     ):
-        if "image" in user_message:
-            st.image(user_message["image"], caption="Imagem enviada", width=300)
+        if "image_bytes" in user_message:
+            # Exibe imagem dos bytes salvos
+            st.image(user_message["image_bytes"], caption="Imagem enviada", width=300)
         st.markdown(prompt)
+
+    # Limpa a imagem ANTES de processar (evita erros de arquivo ausente)
+    st.session_state.uploaded_image = None
+    st.session_state.image_data = None
 
     # Processa com o agente
     with st.chat_message(
@@ -402,8 +422,5 @@ if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
         else:
             st.error(f"❌ Erro: {result['error']}", icon="🚨")
 
-    # Limpa a imagem após envio
-    if st.session_state.image_data:
-        st.session_state.uploaded_image = None
-        st.session_state.image_data = None
-        st.rerun()
+    # Rerun para limpar o estado
+    st.rerun()
