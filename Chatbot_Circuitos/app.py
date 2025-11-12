@@ -219,18 +219,30 @@ def process_image_to_data_uri(image: Image.Image) -> str:
         return ""
 
 
+# CÓDIGO CORRIGIDO - USE ESTA ESTRUTURA
 def build_response_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for m in messages:
         if m["role"] == "user":
-            parts = [{"type": "input_text", "text": m["content"]}]
-            # Envia imagem como data URI usando image_url (image_file causou erro 400)
-            if "image_data_uri" in m:
-                parts.append(
-                    {"type": "input_image", "image_url": {"url": m["image_data_uri"]}}
+            content_list: List[Dict[str, Any]] = [
+                {"type": "text", "text": m["content"]}
+            ]
+
+            # Correção para o formato Vision/ChatCompletions (o mais robusto para multimodality)
+            if "image_data_uri" in m and m["image_data_uri"]:
+                content_list.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": m["image_data_uri"]},
+                    }
                 )
-            items.append({"role": "user", "content": parts})
+
+            # A nova Responses API usa 'content' como a lista de objetos de entrada
+            items.append({"role": "user", "content": content_list})
+
         elif m["role"] == "assistant":
+            # O formato de saída para o histórico precisa ser mapeado de volta para a estrutura de Responses
+            # Esta parte usa o formato mais simples de 'output_text'
             items.append(
                 {
                     "role": "assistant",
