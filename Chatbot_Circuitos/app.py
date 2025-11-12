@@ -219,30 +219,31 @@ def process_image_to_data_uri(image: Image.Image) -> str:
         return ""
 
 
-# CÓDIGO CORRIGIDO - USE ESTA ESTRUTURA
+# CORREÇÃO FINAL NA FUNÇÃO build_response_input
 def build_response_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for m in messages:
         if m["role"] == "user":
             content_list: List[Dict[str, Any]] = [
-                {"type": "text", "text": m["content"]}
+                {"type": "input_text", "text": m["content"]}
             ]
 
-            # Correção para o formato Vision/ChatCompletions (o mais robusto para multimodality)
+            # CORREÇÃO: Usar a estrutura direta do 'input_image' com a URL (Data URI)
             if "image_data_uri" in m and m["image_data_uri"]:
                 content_list.append(
                     {
-                        "type": "image_url",
-                        "image_url": {"url": m["image_data_uri"]},
+                        "type": "input_image",
+                        "image_url": m[
+                            "image_data_uri"
+                        ],  # <--- Passa a string do Data URI DIRETAMENTE aqui!
                     }
                 )
 
-            # A nova Responses API usa 'content' como a lista de objetos de entrada
+            # Note que a chave 'content' é a que a responses API espera para o payload de entrada.
             items.append({"role": "user", "content": content_list})
 
         elif m["role"] == "assistant":
-            # O formato de saída para o histórico precisa ser mapeado de volta para a estrutura de Responses
-            # Esta parte usa o formato mais simples de 'output_text'
+            # Esta parte permanece correta para o histórico
             items.append(
                 {
                     "role": "assistant",
