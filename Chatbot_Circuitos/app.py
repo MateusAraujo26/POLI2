@@ -50,9 +50,10 @@ DEFAULT_ASSISTANT = "Prova_Circuitos"
 def process_with_gpt(
     prompt: str, image_data: str | None = None, thread_id: str | None = None
 ) -> dict:
-    """Processa a mensagem com o GPT Assistant"""
+    """Processa a mensagem com o GPT Assistant Solucionador"""
     try:
-        assistant_info = AVAILABLE_ASSISTANTS[st.session_state.assistant_key]
+        # Sempre usa o GPT Solucionador
+        gpt_assistant = AVAILABLE_ASSISTANTS["GPT_Solucionador"]
 
         if not thread_id:
             thread = client.beta.threads.create()
@@ -61,7 +62,7 @@ def process_with_gpt(
         # Prepara o conteúdo da mensagem
         if image_data:
             api_message_content = [
-                {"type": "text", "text": f"Analise esta imagem e responda: {prompt}"},
+                {"type": "text", "text": prompt},
                 {
                     "type": "image_url",
                     "image_url": {"url": image_data, "detail": "high"},
@@ -80,7 +81,7 @@ def process_with_gpt(
         # Executa e aguarda conclusão
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
-            assistant_id=assistant_info.id,
+            assistant_id=gpt_assistant.id,
         )
 
         if run.status == "completed":
@@ -703,56 +704,43 @@ with st.sidebar:
         st.session_state.camera_active = False
         st.rerun()
 
-    st.header("⚙️ Configurações")
+    st.header("⚙️ Informações")
 
-    # Seletor de Assistente
-    assistant_options = {
-        key: assistant.name for key, assistant in AVAILABLE_ASSISTANTS.items()
-    }
-
-    selected_assistant_key = st.selectbox(
-        label="🤖 Assistente:",
-        options=assistant_options.keys(),
-        format_func=lambda key: assistant_options[key],
-        key="selected_assistant",
-    )
-
-    # Lógica para confirmar mudança de assistente
-    if selected_assistant_key != st.session_state.assistant_key:
-        if st.session_state.messages:
-            st.warning("Mudar de assistente irá iniciar uma nova conversa.", icon="⚠️")
-            if st.button(
-                "Confirmar e iniciar nova conversa",
-                use_container_width=True,
-                key="confirm_assistant_change",
-            ):
-                st.session_state.assistant_key = selected_assistant_key
-                st.session_state.messages = []
-                st.session_state.thread_id = None
-                st.rerun()
-        else:
-            st.session_state.assistant_key = selected_assistant_key
-            st.rerun()
-
-    # Exibe a descrição do assistente
-    assistant_info = AVAILABLE_ASSISTANTS[st.session_state.assistant_key]
+    # Informações sobre o sistema
+    st.markdown("### 🤖 Sistema Multi-Agente")
     st.markdown(
-        f"<small>*{assistant_info.description}*</small>", unsafe_allow_html=True
+        """
+    **Fluxo Automático:**
+    1. 🔵 GPT Solucionador (com histórico)
+    2. 🟢 Gemini Solucionador (análise independente)
+    3. 🟣 Consolidador Expert (análise final)
+    
+    *Todas as questões são processadas pelos 3 agentes automaticamente.*
+    """
     )
 
     st.markdown("---")
-    st.markdown("<br>" * 5, unsafe_allow_html=True)
 
-    # Logos
-    logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
-    with logo_col2:
-        st.markdown(
-            "<small>🚀 Agente POLI </small>",
-            unsafe_allow_html=True,
-        )
+    # Estatísticas da conversa
+    if st.session_state.messages:
+        user_msgs = sum(1 for msg in st.session_state.messages if msg["role"] == "user")
+        st.metric("📊 Questões Resolvidas", user_msgs)
+
+    st.markdown("<br>" * 3, unsafe_allow_html=True)
+
+    # Logo
+    st.markdown(
+        "<div style='text-align: center;'><small>🚀 Agente POLI<br>Sistema Multi-Agente de Análise de Circuitos</small></div>",
+        unsafe_allow_html=True,
+    )
 
 
 # --- Interface Principal do Chat ---
+
+# Header do Chat
+st.markdown("### 🎯 Resolvedor de Circuitos Multi-Agente")
+st.caption("Análise paralela com GPT e Gemini, consolidada por IA especialista")
+
 assistant_info = AVAILABLE_ASSISTANTS[st.session_state.assistant_key]
 
 # Header do Chat
@@ -764,7 +752,10 @@ if st.session_state.image_data:
 
 # Exibe histórico de mensagens
 if not st.session_state.messages:
-    st.info(f"Como posso te ajudar hoje como {assistant_info.name}?", icon="👋")
+    st.info(
+        "👋 Olá! Envie uma imagem de um circuito elétrico e faça sua pergunta. O sistema irá analisar com múltiplos agentes automaticamente.",
+        icon="💡",
+    )
 
 for msg in st.session_state.messages:
     avatar_img = (
@@ -776,6 +767,22 @@ for msg in st.session_state.messages:
         if "image" in msg:
             st.image(msg["image"], caption="Imagem enviada", width=300)
         st.markdown(msg["content"])
+
+        # Se for mensagem do assistente e tiver respostas individuais, mostra expanders
+        if (
+            msg["role"] == "assistant"
+            and "gpt_response" in msg
+            and "gemini_response" in msg
+        ):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                with st.expander("🔵 Ver análise do GPT"):
+                    st.markdown(msg["gpt_response"])
+
+            with col2:
+                with st.expander("🟢 Ver análise do Gemini"):
+                    st.markdown(msg["gemini_response"])
 
 # --- Menu de Anexos ---
 col_attach, col_spacer = st.columns([1, 9])
@@ -857,7 +864,7 @@ if st.session_state.uploaded_image is not None and not st.session_state.camera_a
 
 
 # --- Input do Usuário e Processamento ---
-if prompt := st.chat_input("Digite sua mensagem aqui..."):
+if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
     # Prepara o conteúdo da mensagem
     message_content = prompt
     message_data = {"role": "user", "content": message_content}
@@ -882,13 +889,19 @@ if prompt := st.chat_input("Digite sua mensagem aqui..."):
     with st.chat_message(
         "assistant", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     ):
+        # Fase 1: Processamento paralelo dos solucionadores
         status_placeholder = st.empty()
         status_placeholder.info(
-            "🔄 Processando com GPT e Gemini em paralelo...", icon="⏳"
+            "🔄 **Fase 1/2:** Analisando com GPT e Gemini em paralelo...", icon="⏳"
         )
 
         # Executa processamentos em paralelo
         with ThreadPoolExecutor(max_workers=2) as executor:
+            # Cria thread específica para GPT (para manter histórico)
+            if not st.session_state.thread_id:
+                thread = client.beta.threads.create()
+                st.session_state.thread_id = thread.id
+
             gpt_future = executor.submit(
                 process_with_gpt,
                 prompt,
@@ -911,9 +924,12 @@ if prompt := st.chat_input("Digite sua mensagem aqui..."):
             if "thread_id" in gpt_result:
                 st.session_state.thread_id = gpt_result["thread_id"]
 
-            # Consolida as respostas
+            # Fase 2: Consolidação das respostas
             consolidation_placeholder = st.empty()
-            consolidation_placeholder.info("🔄 Consolidando respostas...", icon="⏳")
+            consolidation_placeholder.info(
+                "🔄 **Fase 2/2:** Consolidando análises com IA especialista...",
+                icon="⏳",
+            )
 
             consolidated_result = consolidate_responses(
                 gpt_result["response"], gemini_result["response"], prompt
@@ -923,21 +939,35 @@ if prompt := st.chat_input("Digite sua mensagem aqui..."):
 
             if consolidated_result["success"]:
                 # Mostra a resposta consolidada
+                st.success("✅ Análise concluída com sucesso!", icon="🎯")
+                st.markdown("---")
                 st.markdown("### 📊 Resposta Consolidada")
                 st.markdown(consolidated_result["response"])
+                st.markdown("---")
 
                 # Botões expansíveis para ver respostas individuais
+                st.caption(
+                    "💡 Clique abaixo para ver as análises individuais de cada agente:"
+                )
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    with st.expander("🤖 Ver resposta do GPT"):
+                    with st.expander("🔵 Ver análise completa do GPT Solucionador"):
+                        st.markdown(
+                            "**Método:** GPT-4 com acesso a banco de provas antigas"
+                        )
+                        st.markdown("---")
                         st.markdown(gpt_result["response"])
 
                 with col2:
-                    with st.expander("✨ Ver resposta do Gemini"):
+                    with st.expander("🟢 Ver análise completa do Gemini Solucionador"):
+                        st.markdown(
+                            "**Método:** Gemini 2.0 Pro com análise independente"
+                        )
+                        st.markdown("---")
                         st.markdown(gemini_result["response"])
 
-                # Salva no histórico
+                # Salva no histórico com as respostas individuais
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -948,14 +978,20 @@ if prompt := st.chat_input("Digite sua mensagem aqui..."):
                 )
             else:
                 st.error(
-                    f"Erro na consolidação: {consolidated_result['error']}", icon="🚨"
+                    f"❌ Erro na consolidação: {consolidated_result['error']}",
+                    icon="🚨",
                 )
         else:
             # Mostra erros se houver
             if not gpt_result["success"]:
-                st.error(f"Erro no GPT: {gpt_result['error']}", icon="🚨")
+                st.error(
+                    f"❌ Erro no GPT Solucionador: {gpt_result['error']}", icon="🚨"
+                )
             if not gemini_result["success"]:
-                st.error(f"Erro no Gemini: {gemini_result['error']}", icon="🚨")
+                st.error(
+                    f"❌ Erro no Gemini Solucionador: {gemini_result['error']}",
+                    icon="🚨",
+                )
 
         # Limpa a imagem após envio
         if st.session_state.image_data:
