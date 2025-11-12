@@ -1,18 +1,13 @@
-# --- Imports ---
-import base64
 import os
-import time
 import io
-from typing import List
-
+import base64
+from typing import List, Dict, Any, Union, Optional, Sequence
 import streamlit as st
 from openai import OpenAI
 from PIL import Image
 
-# --- Configuração da Aplicação ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Configuração da Página e Estilos ---
 st.set_page_config(
     page_title="Agente POLI - Circuitos",
     layout="centered",
@@ -149,278 +144,193 @@ h1, h2, h3 {
     unsafe_allow_html=True,
 )
 
-# --- Inicialização do Cliente OpenAI ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-except Exception as e:
-    st.error(
-        "⚠️ Chave da API da OpenAI não encontrada. Configure seus secrets.",
-        icon="🚨",
-    )
+except Exception:
+    st.error("⚠️ Configure OPENAI_API_KEY em st.secrets.", icon="🚨")
     st.stop()
 
+# Estado
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "uploaded_image_bytes" not in st.session_state:
+    st.session_state.uploaded_image_bytes = None
+if "image_data_uri" not in st.session_state:
+    st.session_state.image_data_uri = None
 
-# --- Função para processar imagem ---
-def process_image(image_file):
-    """Converte imagem para base64"""
+
+# Utils
+def process_image_to_data_uri(image: Image.Image) -> str:
     try:
-        if hasattr(image_file, "read"):
-            image = Image.open(image_file)
-        else:
-            image = image_file
-
-        # Redimensiona se necessário
         max_size = (1024, 1024)
         if image.size[0] > max_size[0] or image.size[1] > max_size[1]:
             image.thumbnail(max_size, Image.Resampling.LANCZOS)
-
-        # Converte para base64
-        buffered = io.BytesIO()
-        image.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-
-        return f"data:image/png;base64,{img_str}"
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
     except Exception as e:
-        st.error(f"Erro ao processar imagem: {e}")
-        return None
+        st.error(f"Erro imagem: {e}")
+        return ""
 
 
-# --- Função para chamar o agente ---
-def call_agent(messages: List[dict]) -> dict:
-    """Chama o agente O1-Pro com a nova API Responses"""
+def upload_image_and_get_file_id(data_uri: str) -> str:
+    # data_uri: data:image/png;base64,...
     try:
-        # Converte mensagens para o formato da API
-        api_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                content = []
-                # Adiciona texto
-                content.append({"type": "input_text", "text": msg["content"]})
-                # Adiciona imagem se houver
-                if "image_data" in msg:
-                    content.append(
-                        {"type": "input_image", "image_url": {"url": msg["image_data"]}}
-                    )
-                api_messages.append({"role": "user", "content": content})
-            elif msg["role"] == "assistant":
-                api_messages.append(
+        if "," in data_uri:
+            b64_part = data_uri.split(",", 1)[1]
+        else:
+            b64_part = data_uri
+        raw = base64.b64decode(b64_part)
+        bio = io.BytesIO(raw)
+        bio.name = "circuit.png"
+        up = client.files.create(file=bio, purpose="vision")
+        return up.id
+    except Exception as e:
+        st.error(f"Upload falhou: {e}", icon="🚨")
+        return ""
+
+
+def build_response_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for m in messages:
+        if m["role"] == "user":
+            content_parts = [{"type": "input_text", "text": m["content"]}]
+            # Se tiver file_id (já enviado)
+            if "image_file_id" in m:
+                content_parts.append(
                     {
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": msg["content"]}],
+                        "type": "input_image",
+                        "image_file": {"file_id": m["image_file_id"]},
                     }
                 )
+            items.append({"role": "user", "content": content_parts})
+        elif m["role"] == "assistant":
+            content_parts = [{"type": "output_text", "text": m["content"]}]
+            items.append({"role": "assistant", "content": content_parts})
+    return items
 
-        # Chama a API Responses
-        response = client.chat.completions.create(
+
+def call_agent(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    try:
+        response = client.responses.create(
             model="o1-pro",
-            messages=api_messages,
             reasoning={"effort": "high"},
             store=True,
+            input=build_response_input(messages),  # type: ignore
+        )
+        # Extrai texto de saída
+        out_text_parts = []
+        for item in getattr(response, "output", []) or []:
+            for c in getattr(item, "content", []) or []:
+                if c.type == "output_text":
+                    out_text_parts.append(c.text)
+        full_text = "\n".join(out_text_parts).strip() or getattr(
+            response, "output_text", ""
         )
 
-        # Extrai a resposta
-        assistant_message = response.choices[0].message
-
-        # Processa o reasoning se disponível
-        reasoning_summary = None
-        if hasattr(assistant_message, "reasoning") and assistant_message.reasoning:
-            reasoning_summary = (
-                assistant_message.reasoning.content
-                if hasattr(assistant_message.reasoning, "content")
-                else None
-            )
-
-        return {
-            "success": True,
-            "content": assistant_message.content,
-            "reasoning": reasoning_summary,
-        }
-
+        # Responses API does not return reasoning content
+        return {"success": True, "content": full_text, "reasoning": None}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-# --- Inicialização do Estado da Sessão ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "uploaded_image" not in st.session_state:
-    st.session_state.uploaded_image = None
-
-if "image_data" not in st.session_state:
-    st.session_state.image_data = None
-
-if "camera_active" not in st.session_state:
-    st.session_state.camera_active = False
-
-# --- Interface da Sidebar ---
+# Sidebar
 with st.sidebar:
     st.title("💬 Agente POLI")
-    st.caption("Especialista em Circuitos Elétricos")
-
-    if st.button("＋ Nova Conversa", use_container_width=True, key="new_chat"):
+    st.caption("Especialista em Circuitos Elétricos (O1-Pro)")
+    if st.button("＋ Nova Conversa", use_container_width=True):
         st.session_state.messages = []
-        st.session_state.uploaded_image = None
-        st.session_state.image_data = None
-        st.session_state.camera_active = False
+        st.session_state.uploaded_image_bytes = None
+        st.session_state.image_data_uri = None
         st.rerun()
-
     st.markdown("---")
-
-    st.header("🤖 Sobre o Agente")
-    st.markdown(
-        """
-    **Modelo:** OpenAI O1-Pro  
-    **Modo:** High Reasoning Effort
-    
-    **Especialidades:**
-    - ⚡ Análise de circuitos
-    - 📊 Cálculos detalhados
-    - 🔍 Verificação dimensional
-    - 📚 Banco de provas antigas
-    """
-    )
-
-    st.markdown("---")
-
-    # Estatísticas
     if st.session_state.messages:
-        user_msgs = sum(1 for msg in st.session_state.messages if msg["role"] == "user")
-        st.metric("📊 Questões Resolvidas", user_msgs)
+        count = sum(1 for m in st.session_state.messages if m["role"] == "user")
+        st.metric("📊 Questões Resolvidas", count)
 
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
-    st.markdown(
-        "<div style='text-align: center;'><small>🚀 Powered by OpenAI O1-Pro</small></div>",
-        unsafe_allow_html=True,
-    )
-
-# --- Interface Principal do Chat ---
 st.markdown("### 🎯 Resolvedor de Circuitos Elétricos")
-st.caption("Análise detalhada com raciocínio aprofundado")
+st.caption("Use texto e opcionalmente imagem do circuito.")
 
-# Indicador de imagem anexada
-if st.session_state.image_data:
-    st.info("📷 Imagem anexada - será enviada com a próxima mensagem", icon="ℹ️")
-
-# Exibe histórico de mensagens
-if not st.session_state.messages:
-    st.info(
-        "👋 Olá! Envie uma imagem de um circuito elétrico e faça sua pergunta.",
-        icon="💡",
-    )
-
-for msg in st.session_state.messages:
-    avatar_img = (
+# Histórico
+for m in st.session_state.messages:
+    avatar = (
         os.path.join(SCRIPT_DIR, "assets", "img", "user.png")
-        if msg["role"] == "user"
+        if m["role"] == "user"
         else os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     )
-    with st.chat_message(msg["role"], avatar=avatar_img):
-        # Exibe imagem dos bytes salvos (não do objeto de arquivo)
-        if "image_bytes" in msg:
-            st.image(msg["image_bytes"], caption="Imagem enviada", width=300)
-        st.markdown(msg["content"])
+    with st.chat_message(m["role"], avatar=avatar):
+        if "image_bytes" in m and m["image_bytes"] is not None:
+            st.image(m["image_bytes"], caption="Circuito", width=300)
+        st.markdown(m["content"])
+        if m["role"] == "assistant" and m.get("reasoning"):
+            with st.expander("🧠 Raciocínio"):
+                st.markdown(m["reasoning"])
 
-        # Mostra raciocínio se disponível
-        if msg["role"] == "assistant" and "reasoning" in msg and msg["reasoning"]:
-            with st.expander("🧠 Ver raciocínio do modelo"):
-                st.markdown(msg["reasoning"])
-
-# --- Menu de Anexos ---
-col1, col2 = st.columns([1, 9])
-
-with col1:
-    if st.button("📎", key="toggle_attachment", help="Anexar imagem"):
-        st.session_state.camera_active = False
-        st.rerun()
-
-# Upload de arquivo
-uploaded_file = st.file_uploader(
+# Upload imagem
+uploaded = st.file_uploader(
     "📁 Anexar imagem do circuito",
-    type=["png", "jpg", "jpeg", "gif", "bmp"],
-    help="Formatos suportados: PNG, JPG, JPEG, GIF, BMP",
-    key="file_uploader",
+    type=["png", "jpg", "jpeg"],
+    help="Formatos suportados.",
 )
-
-if uploaded_file is not None:
-    image_data = process_image(uploaded_file)
-    if image_data:
-        st.session_state.image_data = image_data
-        st.session_state.uploaded_image = uploaded_file
-        st.success("✅ Imagem anexada!")
-
-# Prévia da imagem anexada
-if st.session_state.uploaded_image is not None:
-    with st.expander("🖼️ Imagem anexada", expanded=False):
-        st.image(st.session_state.uploaded_image, use_container_width=True)
-        if st.button("🗑️ Remover imagem", key="remove_image"):
-            st.session_state.uploaded_image = None
-            st.session_state.image_data = None
+if uploaded:
+    raw_bytes = uploaded.read()
+    st.session_state.uploaded_image_bytes = raw_bytes
+    img = Image.open(io.BytesIO(raw_bytes))
+    st.session_state.image_data_uri = process_image_to_data_uri(img)
+    st.success("Imagem pronta para envio.")
+if st.session_state.uploaded_image_bytes:
+    with st.expander("🖼️ Prévia da imagem", expanded=False):
+        st.image(st.session_state.uploaded_image_bytes, use_container_width=True)
+        if st.button("Remover imagem"):
+            st.session_state.uploaded_image_bytes = None
+            st.session_state.image_data_uri = None
             st.rerun()
 
-# --- Input do Usuário e Processamento ---
-if prompt := st.chat_input("Digite sua pergunta sobre o circuito..."):
-    # Prepara a mensagem do usuário
-    user_message = {"role": "user", "content": prompt}
+# Entrada usuário
+prompt = st.chat_input("Digite sua pergunta...")
+if prompt:
+    user_msg: Dict[str, Union[str, bytes, Optional[bytes], Any]] = {
+        "role": "user",
+        "content": prompt,
+    }
+    # Se houver imagem anexada, subir agora e guardar file_id
+    if st.session_state.image_data_uri:
+        file_id = upload_image_and_get_file_id(st.session_state.image_data_uri)
+        if file_id:
+            user_msg["image_file_id"] = file_id
+            user_msg["image_bytes"] = st.session_state.uploaded_image_bytes
+    st.session_state.messages.append(user_msg)
 
-    # Salva uma cópia da imagem antes de limpar
-    current_image = st.session_state.uploaded_image
-    current_image_data = st.session_state.image_data
-
-    # Adiciona imagem se houver
-    if current_image_data:
-        user_message["image_data"] = current_image_data
-        # Converte a imagem para bytes para salvar no histórico
-        if hasattr(current_image, "read"):
-            current_image.seek(0)  # Volta ao início do arquivo
-            image_bytes = current_image.read()
-            user_message["image_bytes"] = image_bytes
-            current_image.seek(0)  # Volta ao início novamente
-        else:
-            # Se já for uma imagem PIL
-            buffered = io.BytesIO()
-            current_image.save(buffered, format="PNG")
-            user_message["image_bytes"] = buffered.getvalue()
-
-    # Adiciona ao histórico
-    st.session_state.messages.append(user_message)
-
-    # Exibe mensagem do usuário
     with st.chat_message(
         "user", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "user.png")
     ):
-        if "image_bytes" in user_message:
-            # Exibe imagem dos bytes salvos
-            st.image(user_message["image_bytes"], caption="Imagem enviada", width=300)
+        if "image_bytes" in user_msg and user_msg["image_bytes"] is not None:
+            st.image(user_msg["image_bytes"], caption="Circuito", width=300)
         st.markdown(prompt)
 
-    # Limpa a imagem ANTES de processar (evita erros de arquivo ausente)
-    st.session_state.uploaded_image = None
-    st.session_state.image_data = None
-
-    # Processa com o agente
+    # Chamada ao modelo
     with st.chat_message(
         "assistant", avatar=os.path.join(SCRIPT_DIR, "assets", "img", "gpt.png")
     ):
-        with st.spinner("🤔 Analisando com raciocínio aprofundado..."):
+        with st.spinner("Analisando..."):
             result = call_agent(st.session_state.messages)
-
         if result["success"]:
             st.markdown(result["content"])
-
-            # Mostra raciocínio se disponível
             if result.get("reasoning"):
-                with st.expander("🧠 Ver raciocínio do modelo"):
+                with st.expander("🧠 Raciocínio"):
                     st.markdown(result["reasoning"])
-
-            # Salva no histórico
-            assistant_message = {"role": "assistant", "content": result["content"]}
-            if result.get("reasoning"):
-                assistant_message["reasoning"] = result["reasoning"]
-
-            st.session_state.messages.append(assistant_message)
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": result["content"],
+                    "reasoning": result.get("reasoning"),
+                }
+            )
         else:
-            st.error(f"❌ Erro: {result['error']}", icon="🚨")
+            st.error(f"Erro: {result['error']}", icon="🚨")
 
-    # Rerun para limpar o estado
+    # Limpa imagem após envio
+    st.session_state.uploaded_image_bytes = None
+    st.session_state.image_data_uri = None
     st.rerun()
