@@ -219,33 +219,15 @@ def process_image_to_data_uri(image: Image.Image) -> str:
         return ""
 
 
-def upload_image_and_get_file_id(data_uri: str) -> str:
-    try:
-        if "," in data_uri:
-            b64_part = data_uri.split(",", 1)[1]
-        else:
-            b64_part = data_uri
-        raw = base64.b64decode(b64_part)
-        bio = io.BytesIO(raw)
-        bio.name = "circuit.png"
-        up = client.files.create(file=bio, purpose="vision")
-        return up.id
-    except Exception as e:
-        st.error(f"Falha upload imagem: {e}", icon="🚨")
-        return ""
-
-
-def build_response_input(messages: List[Dict[str, Any]]) -> Sequence[Dict[str, Any]]:
+def build_response_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for m in messages:
         if m["role"] == "user":
             parts = [{"type": "input_text", "text": m["content"]}]
-            if "image_file_id" in m:
+            # Envia imagem como data URI usando image_url (image_file causou erro 400)
+            if "image_data_uri" in m:
                 parts.append(
-                    {
-                        "type": "input_image",
-                        "image_file": {"file_id": m["image_file_id"]},
-                    }
+                    {"type": "input_image", "image_url": {"url": m["image_data_uri"]}}
                 )
             items.append({"role": "user", "content": parts})
         elif m["role"] == "assistant":
@@ -374,6 +356,7 @@ if uploaded:
         st.session_state.uploaded_image_bytes = raw
         st.session_state.image_data_uri = data_uri
         st.success("Imagem pronta.")
+
 if st.session_state.uploaded_image_bytes:
     with st.expander("🖼️ Prévia da imagem"):
         st.image(st.session_state.uploaded_image_bytes, use_container_width=True)
@@ -401,13 +384,10 @@ if should_send:
 
     user_msg: Dict[str, Any] = {"role": "user", "content": prompt}
 
+    # Usa data URI diretamente (Responses API espera image_url, não image_file)
     if st.session_state.image_data_uri:
-        file_id = upload_image_and_get_file_id(st.session_state.image_data_uri)
-        if not file_id:
-            st.error("Falha no upload da imagem. Abortando envio.", icon="🚨")
-        else:
-            user_msg["image_file_id"] = file_id
-            user_msg["image_bytes"] = st.session_state.uploaded_image_bytes
+        user_msg["image_data_uri"] = st.session_state.image_data_uri
+        user_msg["image_bytes"] = st.session_state.uploaded_image_bytes
 
     st.session_state.messages.append(user_msg)
 
