@@ -4,4 +4,4 @@ env/
 .env
 ENV/
 .venv/
-.zip
+*.zip
