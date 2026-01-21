@@ -1,1 +1,5 @@
+#  Linhas de um arquivo que começam com um número de até dois dígitos, seguido por parênteses 
+# e por uma frase qualquer. A linha deve terminar com um ponto de interrogação.
+# O . (ponto) não pega quebra de linha por padrão, o que é bom aqui: Usamos .* para o miolo.
+
 ^\d{1,2}\) .*\?$
