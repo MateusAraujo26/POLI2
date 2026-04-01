@@ -9,7 +9,7 @@ echo "Iniciando Teste Round-Trip (MVN -> ASM -> MVN)"
 echo "========================================"
 
 # 1. Compila as duas ferramentas
-echo "[1/3] Compilando mnem2op e op2mnem..."
+echo "[1/4] Compilando mnem2op e op2mnem..."
 gcc mnem2op.c -o mnem2op -Wall
 gcc op2mnem.c -o op2mnem -Wall
 
@@ -22,7 +22,7 @@ echo -e "${GREEN}[OK] Compiladores prontos.${NC}"
 # 2. Casos de Teste (Exemplos Oficiais + Nossos Casos Limite)
 TEST_CASES=("ep-exemplo-1" "ep-exemplo-2" "ep-exemplo-3" "teste_subrotinas" "teste_sem_regiao" "teste_SO")
 
-echo "[2/3] Executando ciclo de vida da engenharia reversa..."
+echo "[2/4] Executando ciclo de vida da engenharia reversa..."
 PASSED=0
 FAILED=0
 
@@ -56,9 +56,35 @@ for test in "${TEST_CASES[@]}"; do
     rm -f "${test}_temp.asm" "${test}_reconstruido.mvn"
 done
 
-# 4. Resumo Final
+# 4. Testes textuais do disassembler (heurística e labels)
+echo "[3/4] Validando saída textual do op2mnem..."
+TEXT_TESTS=("teste_limite_regiao" "teste_labels_tipos")
+
+for test in "${TEXT_TESTS[@]}"; do
+    if [ ! -f "${test}.mvn" ] || [ ! -f "${test}.asm" ]; then
+        echo -e "${RED}[AVISO] Arquivos ${test}.mvn/.asm não encontrados. Pulando...${NC}"
+        continue
+    fi
+
+    ./op2mnem "${test}.mvn" > "${test}_out.asm"
+    DIFF_RESULT=$(diff -w -i "${test}.asm" "${test}_out.asm")
+
+    if [ "$DIFF_RESULT" == "" ]; then
+        echo -e "  -> ${test}: ${GREEN}PASSOU (Saída textual correta)${NC}"
+        PASSED=$((PASSED+1))
+    else
+        echo -e "  -> ${test}: ${RED}FALHOU${NC}"
+        echo "     Diferenças na saída ASM:" 
+        echo "$DIFF_RESULT"
+        FAILED=$((FAILED+1))
+    fi
+
+    rm -f "${test}_out.asm"
+done
+
+# 5. Resumo Final
 echo "========================================"
-echo "[3/3] Resumo Round-Trip:"
+echo "[4/4] Resumo Geral:"
 echo -e "${GREEN}Sucessos: ${PASSED}${NC}"
 if [ $FAILED -gt 0 ]; then
     echo -e "${RED}Falhas: ${FAILED}${NC}"

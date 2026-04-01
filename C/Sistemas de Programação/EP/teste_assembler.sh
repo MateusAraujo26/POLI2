@@ -19,7 +19,7 @@ fi
 echo -e "${GREEN}[OK] Compilação bem-sucedida.${NC}"
 
 # 2. Definição dos casos de teste
-TEST_CASES=("ep-exemplo-1" "ep-exemplo-2" "ep-exemplo-3" "teste_const_hex" "teste_@_jump" "teste_identacao")
+TEST_CASES=("ep-exemplo-1" "ep-exemplo-2" "ep-exemplo-3" "teste_const_hex" "teste_@_jump" "teste_identacao" "teste_todos_opcodes")
 
 echo "[2/3] Rodando testes..."
 PASSED=0
