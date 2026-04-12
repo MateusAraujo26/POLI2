@@ -1,0 +1,10 @@
+.venv
+venv/
+env/
+.env
+ENV/
+.venv/
+*.zip
+.csv
+/Sistemas de Programação/Lab1/clmystery/misterio/
+/Digital

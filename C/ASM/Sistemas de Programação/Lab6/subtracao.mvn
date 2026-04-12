@@ -1,0 +1,10 @@
+0000 A006 ; SC 0x006 - Chama subrotina
+0002 C000 ; HM 0x000 - Fim do main
+0006 0000 ; Endereco de retorno do SC
+0008 8010 ; LD 0x010 - Carrega X
+000A 5012 ; SUB 0x012 - Subtrai Y
+000C 9014 ; MM 0x014 - Armazena resultado em 0x014
+000E B006 ; RS 0x006 - Retorna para endereco salvo em 0006
+0010 0000 ; X
+0012 0000 ; Y
+0014 0000 ; Z
