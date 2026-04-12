@@ -1,9 +1,0 @@
-[submodule "ASSEMBLY"]
-	path = ASSEMBLY
-	url = https://github.com/gabrielGAGRA/ASSEMBLY
-[submodule "C"]
-	path = C
-	url = https://github.com/gabrielGAGRA/C
-[submodule "VERILOG"]
-	path = VERILOG
-	url = https://github.com/gabrielGAGRA/VERILOG
