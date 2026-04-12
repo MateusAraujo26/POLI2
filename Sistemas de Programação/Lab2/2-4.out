@@ -1,0 +1,24 @@
+# No mínimo 2 nomes (nome e sobrenome) e no máximo 3.
+
+# Todos os nomes devem começar com letra maiúscula 
+    # (e este é o único lugar em que letras maiúsculas podem aparecer)
+
+# O nome do meio, se presente, pode ser abreviado. 
+    # A abreviação é a primeira letra do nome (maiúscula) seguida por um ponto
+
+# Todos os nomes devem ter pelo menos 3 letras (a não ser que seja o nome do meio abreviado)
+
+
+# Lógica:
+# Nome 1: [A-Z][a-z]{2,} (Maiúscula + 2 ou infinitas mais minúsculas).
+# Espaço.
+# Nome do Meio (Opcional):
+    # Ou é completo: [A-Z][a-z]{2,}
+    # Ou é abreviado: [A-Z]\.
+# Espaço.
+# Sobrenome: [A-Z][a-z]{2,}
+
+# Para combinar e tornar opcional tanto o nome do meio quanto seu espaço, estruturamos como: 
+# Nome (Meio )?Sobrenome.
+
+^[A-Z][a-z]{2,} (([A-Z][a-z]{2,}|[A-Z]\.) )?[A-Z][a-z]{2,}$
