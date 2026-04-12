@@ -1,3 +1,6 @@
-[submodule "Laboratório de Sistemas Digitais"]
-	path = Laboratório de Sistemas Digitais
-	url = ./Laboratório de Sistemas Digitais
+[submodule "LabSD"]
+	path = Laborat?rio_de_Sistemas_Digitais
+	url = https://github.com/gabrielGAGRA/LabSD
+[submodule "SPOOtify"]
+	path = Orienta??o a Objetos/SPOOtify
+	url = https://github.com/gabrielGAGRA/SPOOtify
