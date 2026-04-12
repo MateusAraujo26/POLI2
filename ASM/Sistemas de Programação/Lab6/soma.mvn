@@ -1,7 +1,0 @@
-0000 8010 ; LD 0x010 - Carrega -11 no acumulador
-0002 4012 ; ADD 0x012 - Soma com 33
-0004 9014 ; MM 0x014 - Armazena resultado em 0x014
-0006 C000 ; HM 0x000 - Interrompe a execucao
-0010 FF91 ; -11 em complemento de 2
-0012 014d ; 33 em hexadecimal
-000C 0000 ; Espaco reservado para o resultado
