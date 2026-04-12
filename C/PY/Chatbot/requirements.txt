@@ -1,5 +1,0 @@
-streamlit
-openai
-pydantic
-Pillow
-google-generativeai
