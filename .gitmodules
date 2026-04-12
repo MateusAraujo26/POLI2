@@ -4,9 +4,6 @@
 [submodule "SPOOtify"]
 	path = Orientação a Objetos/SPOOtify
 	url = https://github.com/gabrielGAGRA/SPOOtify
-[submodule "Laboratório_de_Sistemas_Digitais"]
-	path = Laboratório_de_Sistemas_Digitais
-	url = ./Laboratório_de_Sistemas_Digitais
 [submodule "Laboratorio_Digitais"]
-	path = Laboratório_de_Sistemas_Digitais
-	url = ./Laboratório_de_Sistemas_Digitais
+	path = Laboratorio_de_Sistemas_Digitais
+	url = ./Laboratorio_de_Sistemas_Digitais
