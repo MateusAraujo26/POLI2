@@ -1,6 +1,6 @@
 [submodule "Laboratorio_de_Sistemas_Digitais"]
-path = Laboratorio_de_Sistemas_Digitais
-url = https://github.com/gabrielGAGRA/Laboratorio_de_Sistemas_Digitais.git
+	path = Laboratorio_de_Sistemas_Digitais
+	url = https://github.com/gabrielGAGRA/Laboratorio_de_Sistemas_Digitais.git
 [submodule "Orientação a Objetos/SPOOtify"]
 	path = Orientação a Objetos/SPOOtify
 	url = https://github.com/gabrielGAGRA/SPOOtify.git
