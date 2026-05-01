@@ -4,3 +4,6 @@
 [submodule "Orientação a Objetos/SPOOtify"]
 	path = Orientação a Objetos/SPOOtify
 	url = https://github.com/gabrielGAGRA/SPOOtify.git
+[submodule "Banco_de_Dados"]
+	path = Banco_de_Dados
+	url = https://github.com/gabrielGAGRA/Banco_de_Dados.git

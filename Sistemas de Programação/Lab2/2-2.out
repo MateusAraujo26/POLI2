@@ -1,4 +1,0 @@
-# Formato fixo: +55 (11) 999994321. 
-# Devemos escapar o + e os parênteses (), pois são caracteres especiais em Regex.
-
-^\+\d{2} \(\d{2}\) \d{8,9}$
