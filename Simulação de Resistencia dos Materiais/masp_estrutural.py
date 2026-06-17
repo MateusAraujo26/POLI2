@@ -2,328 +2,408 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
-import sympy as sp
-import io
 
-# ─────────────────────────────────────────────
-# MASP — Análise Estrutural Interativa
-# Pórtico plano isostático simplificado
-# ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+#  MASP — Esforços Solicitantes na Viga Principal
+#  PEF-3208 · Fundamentos de Mecânica das Estruturas · POLI-USP
+# ══════════════════════════════════════════════════════════════
 
-def resolver_portico(q_ef, q_viga, N_pret, P_pont, x_pont, L=70.0, h=11.0):
-    q_total = q_ef + q_viga
-    R_Av = q_total * L / 2 + P_pont * (L - x_pont) / L
-    R_Bv = q_total * L / 2 + P_pont * x_pont / L
-    N_pil_esq = -R_Av
-    N_pil_dir = -R_Bv
-    N_viga = -N_pret
 
-    xs = np.linspace(0, L, 500)
-    Vnum = np.where(xs <= x_pont,
-                    R_Av - q_total * xs,
-                    R_Av - q_total * xs - P_pont)
-    Mnum = np.where(xs <= x_pont,
-                    R_Av * xs - 0.5 * q_total * xs**2,
-                    R_Av * xs - 0.5 * q_total * xs**2 - P_pont * (xs - x_pont))
+def calcular_reacoes(q, P, a, L):
+    """Reações de apoio pelas 3 equações de equilíbrio."""
+    HD = 0.0  # ∑Fx = 0
+    RD = (q * L**2 / 2 + P * a) / L  # ∑Mc = 0
+    RC = q * L + P - RD  # ∑Fy = 0
+    return round(RC, 3), round(RD, 3), round(HD, 3)
 
-    return dict(
-        R_Av=round(R_Av, 2), R_Bv=round(R_Bv, 2),
-        N_pil_esq=round(N_pil_esq, 2), N_pil_dir=round(N_pil_dir, 2),
-        N_viga=round(N_viga, 2),
-        xs=xs, Vnum=Vnum, Mnum=Mnum,
-        M_max=round(float(np.max(Mnum)), 2),
-        V_max=round(float(np.max(np.abs(Vnum))), 2),
-        x_Mmax=round(float(xs[np.argmax(Mnum)]), 2)
+
+def esforcos_solicitantes(x, RC, q, P, a):
+    """
+    N, V, M na seção x (subestrutura da esquerda).
+    Convenção PEF-3208:
+      N > 0 → saindo da seção (tração)
+      V > 0 → gira a subestrutura no sentido horário
+      M > 0 → traciona fibras inferiores (diagrama desenhado abaixo)
+    """
+    N = np.zeros_like(x)  # sem força horizontal na viga
+    V = np.where(x <= a, RC - q * x, RC - q * x - P)
+    M = np.where(x <= a, RC * x - 0.5 * q * x**2, RC * x - 0.5 * q * x**2 - P * (x - a))
+    return N, V, M
+
+
+def plot_analise(q, P, a, L, RC, RD, HD):
+    xs = np.linspace(0, L, 2000)
+    N, V, M = esforcos_solicitantes(xs, RC, q, P, a)
+
+    V_C = RC  # cortante imediatamente após C
+    V_D = RC - q * L - P  # cortante imediatamente antes de D
+    M_max_val = float(np.max(M))
+    x_Mmax = float(xs[np.argmax(M)])
+
+    fig, axes = plt.subplots(
+        4, 1, figsize=(11, 14), gridspec_kw={"height_ratios": [2.2, 1, 1, 1]}
+    )
+    fig.patch.set_facecolor("white")
+    for ax in axes:
+        ax.set_facecolor("white")
+        ax.tick_params(colors="#333333", labelsize=9)
+        for sp in ax.spines.values():
+            sp.set_edgecolor("#cccccc")
+        ax.grid(True, color="#e0e0e0", lw=0.6, ls="--")
+
+    COR_EST = "#424242"
+    COR_N = "#00796b"
+    COR_V = "#1976d2"
+    COR_M = "#d32f2f"
+    COR_TXT = "#212121"
+    COR_MUT = "#666666"
+    COR_REA = "#7b1fa2"  # Purple for reaction forces
+
+    # ── Painel 1 — Esquema estrutural ────────────────────────
+    ax0 = axes[0]
+    ax0.set_title(
+        "Modelo Estrutural — Viga Principal do MASP (trecho CD)",
+        color=COR_TXT,
+        fontsize=12,
+        fontweight="bold",
+        pad=10,
     )
 
+    # viga
+    ax0.plot([0, L], [0, 0], "-", color=COR_EST, lw=5, solid_capstyle="round")
 
-def capacidade_ruptura(res):
-    fcd   = 23_333   # kN/m²
-    b, d  = 1.5, 3.0
-    tau_d = 700      # kN/m²
-    Mr = 0.68 * fcd * b * d**2
-    Vr = tau_d * b * d
-    Nr = fcd * b * d
+    # apoio simples em C (triângulo + roletes)
+    tri_C = patches.Polygon(
+        [[0, 0], [-2, -3], [2, -3]], closed=True, fc="#c8e6c9", ec="#2e7d32", lw=1.5
+    )
+    ax0.add_patch(tri_C)
+    for dx in [-0.8, 0.8]:
+        ax0.add_patch(patches.Circle((dx, -3.5), 0.5, fc="#c8e6c9", ec="#2e7d32"))
+    ax0.plot([-3, 3], [-4, -4], "-", color="#888888", lw=1.5)
 
-    uso_M = abs(res["M_max"]) / Mr * 100
-    uso_V = max(abs(res["R_Av"]), abs(res["R_Bv"])) / Vr * 100
-    uso_N = abs(res["N_viga"]) / Nr * 100
+    # apoio fixo em D (triângulo preenchido + hachura)
+    tri_D = patches.Polygon(
+        [[L, 0], [L - 2, -3], [L + 2, -3]],
+        closed=True,
+        fc="#bbdefb",
+        ec="#1565c0",
+        lw=1.5,
+    )
+    ax0.add_patch(tri_D)
+    ax0.plot([L - 3, L + 3], [-3, -3], "-", color="#888888", lw=1.5)
+    for i in range(7):
+        xi = (L - 3) + i * 1.0
+        ax0.plot([xi, xi - 0.7], [-3, -4], "-", color="#888888", lw=0.8)
 
-    return dict(Mr=round(Mr, 0), Vr=round(Vr, 0), Nr=round(Nr, 0),
-                uso_M=round(uso_M, 1), uso_V=round(uso_V, 1), uso_N=round(uso_N, 1))
+    # carga distribuída
+    n_arr = 14
+    for i in range(n_arr + 1):
+        xi = i * L / n_arr
+        ax0.annotate(
+            "",
+            xy=(xi, 0),
+            xytext=(xi, 4.5),
+            arrowprops=dict(
+                arrowstyle="->,head_width=0.5,head_length=0.9",
+                fc="#e53935",
+                ec="#e53935",
+                lw=1.2,
+            ),
+        )
+    ax0.plot([0, L], [4.5, 4.5], "-", color="#e53935", lw=1.5)
+    ax0.text(
+        L / 2,
+        5.2,
+        f"q = {q:.1f} kN/m  (carga distribuída uniforme)",
+        ha="center",
+        color="#e53935",
+        fontsize=9,
+        fontweight="bold",
+    )
+
+    # carga concentrada
+    if P > 0:
+        ax0.annotate(
+            "",
+            xy=(a, 0),
+            xytext=(a, 8),
+            arrowprops=dict(
+                arrowstyle="->,head_width=1.0,head_length=1.3",
+                fc="#ff8f00",
+                ec="#ff8f00",
+                lw=2.5,
+            ),
+        )
+        ax0.text(
+            a,
+            8.7,
+            f"P = {P:.0f} kN\n(a = {a:.1f} m de C)",
+            ha="center",
+            color="#ff8f00",
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    # reações (desenhadas abaixo dos apoios para não sobrepor)
+    ax0.annotate(
+        "",
+        xy=(0, -4),
+        xytext=(0, -8),
+        arrowprops=dict(
+            arrowstyle="->,head_width=1.0,head_length=1.2",
+            fc=COR_REA,
+            ec=COR_REA,
+            lw=2.5,
+        ),
+    )
+    ax0.text(
+        0,
+        -9.5,
+        f"RC = {RC:.2f} kN",
+        color=COR_REA,
+        fontsize=9,
+        fontweight="bold",
+        ha="center",
+    )
+
+    ax0.annotate(
+        "",
+        xy=(L, -3),
+        xytext=(L, -8),
+        arrowprops=dict(
+            arrowstyle="->,head_width=1.0,head_length=1.2",
+            fc=COR_REA,
+            ec=COR_REA,
+            lw=2.5,
+        ),
+    )
+    ax0.text(
+        L,
+        -9.5,
+        f"RD = {RD:.2f} kN",
+        color=COR_REA,
+        fontsize=9,
+        fontweight="bold",
+        ha="center",
+    )
+
+    # rótulos C e D
+    for px, nome in [(0, "C  (apoio simples)"), (L, "D  (apoio fixo)")]:
+        ax0.plot(px, 0, "o", color=COR_EST, ms=7)
+        ax0.text(px + (1 if px == 0 else -14), 1.2, nome, color=COR_TXT, fontsize=9)
+
+    # cota L
+    ax0.annotate(
+        "",
+        xy=(0, -11.5),
+        xytext=(L, -11.5),
+        arrowprops=dict(arrowstyle="<->", color=COR_MUT, lw=1),
+    )
+    ax0.text(L / 2, -13, f"L = {L:.0f} m", ha="center", color=COR_MUT, fontsize=9)
+
+    if P > 0:
+        # cota a
+        ax0.annotate(
+            "",
+            xy=(0, -14.5),
+            xytext=(a, -14.5),
+            arrowprops=dict(arrowstyle="<->", color="#ff8f00", lw=0.9),
+        )
+        ax0.text(a / 2, -16, f"a = {a:.1f} m", ha="center", color="#ff8f00", fontsize=8)
+
+    ax0.set_xlim(-8, L + 8)
+    ax0.set_ylim(-18, 11)
+    ax0.set_aspect("equal")
+    ax0.axis("off")
+    ax0.grid(False)
+
+    # ── Painéis 2, 3, 4 — Diagramas N, V, M ─────────────────
+    dados = [
+        (
+            axes[1],
+            N,
+            COR_N,
+            "Diagrama de Força Normal  N(x)",
+            "N [kN]",
+            "N > 0: tração (sai da seção)\nN < 0: compressão (entra na seção)",
+        ),
+        (
+            axes[2],
+            V,
+            COR_V,
+            "Diagrama de Força Cortante  V(x)",
+            "V [kN]",
+            "V > 0: gira subestrutura no sentido horário\nV < 0: sentido anti-horário",
+        ),
+        (
+            axes[3],
+            M,
+            COR_M,
+            "Diagrama de Momento Fletor  M(x)",
+            "M [kN·m]",
+            "M > 0: traciona fibras inferiores → diagrama traçado ABAIXO",
+        ),
+    ]
+
+    for ax, vals, cor, titulo, ylabel, convencao in dados:
+        ax.set_title(titulo, color=COR_TXT, fontsize=11, fontweight="bold", pad=6)
+
+        if titulo.startswith("Diagrama de Momento"):
+            # Convenção PEF-3208: M>0 desenhado abaixo → inverter eixo y
+            plot_vals = -vals
+        else:
+            plot_vals = vals
+
+        ax.fill_between(xs, plot_vals, 0, where=plot_vals >= 0, color=cor, alpha=0.15)
+        ax.fill_between(
+            xs, plot_vals, 0, where=plot_vals < 0, color="#e53935", alpha=0.15
+        )
+        ax.plot(xs, plot_vals, color=cor, lw=2)
+        ax.axhline(0, color=COR_MUT, lw=0.8)
+        ax.set_xlabel("x [m]  (origem em C)", color=COR_MUT, fontsize=9)
+        ax.set_ylabel(ylabel, color=COR_MUT, fontsize=9)
+
+        # anotação de convenção
+        ax.text(
+            0.01,
+            0.04,
+            convencao,
+            transform=ax.transAxes,
+            color=COR_MUT,
+            fontsize=7.5,
+            va="bottom",
+            style="italic",
+        )
+
+        # valores relevantes
+        if titulo.startswith("Diagrama de Força Cortante"):
+            ax.text(
+                0.99,
+                0.97,
+                f"V(0⁺) = {V_C:.2f} kN  |  V(L⁻) = {V_D:.2f} kN",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                color=COR_V,
+                fontsize=9,
+                fontweight="bold",
+            )
+        elif titulo.startswith("Diagrama de Momento"):
+            ax.text(
+                0.99,
+                0.97,
+                f"M_máx = {M_max_val:,.1f} kN·m  @ x = {x_Mmax:.2f} m",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                color=COR_M,
+                fontsize=9,
+                fontweight="bold",
+            )
+            ax.invert_yaxis()
+            ax.set_ylabel("M [kN·m]\n(positivo ↓)", color=COR_MUT, fontsize=9)
+
+    plt.tight_layout(pad=2.5)
+    return fig, M_max_val, x_Mmax, V_C, V_D
 
 
-def plot_masp(res, cap, q_ef, q_viga, N_pret, P_pont, x_pont, L=70.0, h=11.0):
-    cor_bg  = "#0f0f0f"
-    cor_est = "#e0c87a"
-    cor_V   = "#4fc3f7"
-    cor_M   = "#ef9a9a"
-    cor_txt = "#f0f0f0"
-    cor_mut = "#aaaaaa"
-    cor_rup = "#ff5252"
-    cor_ok  = "#69f0ae"
+# ══════════════════════════════════════════════════════════════
+#  Interface Streamlit
+# ══════════════════════════════════════════════════════════════
 
-    fig = plt.figure(figsize=(14, 16))
-    fig.patch.set_facecolor(cor_bg)
+st.set_page_config(
+    page_title="MASP — Esforços Solicitantes", layout="wide", page_icon="🏛️"
+)
 
-    def axstyle(ax, title=""):
-        ax.set_facecolor("#1a1a1a")
-        ax.tick_params(colors=cor_mut, labelsize=9)
-        for sp_ in ax.spines.values():
-            sp_.set_edgecolor("#333")
-        ax.grid(True, color="#2a2a2a", linewidth=0.7, linestyle="--")
-        if title:
-            ax.set_title(title, color=cor_txt, fontsize=11, pad=8, fontweight="bold")
-
-    gs = fig.add_gridspec(4, 2, hspace=0.55, wspace=0.35,
-                          left=0.07, right=0.97, top=0.94, bottom=0.04)
-
-    # Cabeçalho
-    ax_tit = fig.add_subplot(gs[0, :])
-    ax_tit.axis("off")
-    ax_tit.set_facecolor(cor_bg)
-    ax_tit.text(0.5, 0.72, "MASP — Análise Estrutural Interativa",
-                ha="center", va="center", fontsize=17, color=cor_est,
-                fontweight="bold", fontfamily="serif", transform=ax_tit.transAxes)
-    ax_tit.text(0.5, 0.25,
-                f"Pórtico Plano Isostático  |  L = {L:.0f} m  |  h = {h:.1f} m  |  "
-                f"q_total = {q_ef+q_viga:.1f} kN/m  |  P = {P_pont:.0f} kN @ x={x_pont:.1f} m",
-                ha="center", va="center", fontsize=10, color=cor_mut,
-                transform=ax_tit.transAxes)
-
-    # Esquema estrutural
-    ax1 = fig.add_subplot(gs[1, :])
-    ax1.set_facecolor("#1a1a1a")
-    ax1.set_title("Esquema Estrutural e Cargas", color=cor_txt, fontsize=11,
-                  pad=8, fontweight="bold")
-
-    A = (0, 0); B = (L, 0); C = (0, h); D = (L, h)
-    ax1.plot([A[0],C[0]], [A[1],C[1]], "-", color=cor_est, lw=3)
-    ax1.plot([B[0],D[0]], [B[1],D[1]], "-", color=cor_est, lw=3)
-    ax1.plot([C[0],D[0]], [C[1],D[1]], "-", color=cor_est, lw=5)
-    y_laje = h - 4.3
-    ax1.plot([2, L-2], [y_laje, y_laje], "-", color="#90caf9", lw=2.5)
-    ax1.text(L/2, y_laje+0.8, "Laje pendurada", ha="center",
-             color="#90caf9", fontsize=8)
-
-    for px, py in [(A[0],A[1]), (B[0],B[1])]:
-        tri = patches.Polygon([[px,py],[px-1.5,py-2.5],[px+1.5,py-2.5]],
-                               closed=True, facecolor="#90ee90",
-                               edgecolor="darkgreen", lw=1.5)
-        ax1.add_patch(tri)
-        ax1.plot([px-2,px+2],[py-2.5,py-2.5],"k-",lw=1.5)
-
-    for i in range(13):
-        xi = i * L / 12
-        ax1.annotate("", xy=(xi, h), xytext=(xi, h+2.5),
-                     arrowprops=dict(arrowstyle="->,head_width=0.4,head_length=0.8",
-                                     facecolor="#ef9a9a", lw=1.2))
-    ax1.text(L/2, h+3.2, f"q = {q_ef+q_viga:.1f} kN/m",
-             ha="center", color="#ef9a9a", fontsize=9, fontweight="bold")
-
-    if P_pont > 0:
-        ax1.annotate("", xy=(x_pont, h), xytext=(x_pont, h+4.8),
-                     arrowprops=dict(arrowstyle="->,head_width=0.9,head_length=1.2",
-                                     facecolor="#ffca28", lw=2.5))
-        ax1.text(x_pont, h+5.4, f"P={P_pont:.0f} kN", ha="center",
-                 color="#ffca28", fontsize=9, fontweight="bold")
-
-    for ponto, nome, dx, dy in [(A,"A",-3,-1.5),(B,"B",1.5,-1.5),
-                                 (C,"C",-3.5,0),(D,"D",1.5,0)]:
-        ax1.plot(ponto[0], ponto[1], "o", color=cor_est, ms=6)
-        ax1.text(ponto[0]+dx, ponto[1]+dy, nome, color=cor_txt, fontsize=10)
-
-    ax1.annotate("", xy=(0,-3.5), xytext=(L,-3.5),
-                 arrowprops=dict(arrowstyle="<->", color=cor_mut, lw=1))
-    ax1.text(L/2, -4.8, f"{L:.0f} m", ha="center", color=cor_mut, fontsize=9)
-    ax1.annotate("", xy=(-5,0), xytext=(-5,h),
-                 arrowprops=dict(arrowstyle="<->", color=cor_mut, lw=1))
-    ax1.text(-7.5, h/2, f"{h:.1f} m", ha="center", color=cor_mut,
-             fontsize=9, rotation=90)
-
-    ax1.set_xlim(-10, L+10); ax1.set_ylim(-7, h+8)
-    ax1.set_aspect("equal"); ax1.axis("off")
-    ax1.grid(False)
-
-    # Diagrama V(x)
-    ax2 = fig.add_subplot(gs[2, 0])
-    axstyle(ax2, "Diagrama de Esforço Cortante  V(x)")
-    xs, Vnum = res["xs"], res["Vnum"]
-    ax2.fill_between(xs, Vnum, 0, where=Vnum>=0, color=cor_V, alpha=0.3)
-    ax2.fill_between(xs, Vnum, 0, where=Vnum<0, color=cor_rup, alpha=0.3)
-    ax2.plot(xs, Vnum, color=cor_V, lw=2)
-    ax2.axhline(0, color=cor_mut, lw=0.8)
-    ax2.set_xlabel("x [m]", color=cor_mut, fontsize=9)
-    ax2.set_ylabel("V [kN]", color=cor_mut, fontsize=9)
-    ax2.text(0.97, 0.95, f"|Vmax| = {res['V_max']:.1f} kN",
-             transform=ax2.transAxes, ha="right", va="top",
-             color=cor_V, fontsize=9, fontweight="bold")
-
-    # Diagrama M(x)
-    ax3 = fig.add_subplot(gs[2, 1])
-    axstyle(ax3, "Diagrama de Momento Fletor  M(x)")
-    Mnum = res["Mnum"]
-    ax3.fill_between(xs, Mnum, 0, color=cor_M, alpha=0.3)
-    ax3.plot(xs, Mnum, color=cor_M, lw=2)
-    ax3.axhline(0, color=cor_mut, lw=0.8)
-    ax3.set_xlabel("x [m]", color=cor_mut, fontsize=9)
-    ax3.set_ylabel("M [kN·m]", color=cor_mut, fontsize=9)
-    ax3.text(0.97, 0.95,
-             f"Mmax = {res['M_max']:,.0f} kN·m\n@ x={res['x_Mmax']:.1f} m",
-             transform=ax3.transAxes, ha="right", va="top",
-             color=cor_M, fontsize=9, fontweight="bold")
-
-    # Indicadores ELU
-    ax4 = fig.add_subplot(gs[3, :])
-    axstyle(ax4, "Indicadores de Segurança — Verificação ELU Simplificada (C35)")
-    labels  = ["Utiliz. Momento  (Mr)", "Utiliz. Cortante  (Vr)", "Utiliz. Normal  (Nr)"]
-    valores = [cap["uso_M"], cap["uso_V"], cap["uso_N"]]
-    cores_b = [cor_rup if v > 100 else (cor_ok if v < 70 else "#ffca28")
-               for v in valores]
-
-    bars = ax4.barh(labels, valores, color=cores_b, height=0.4, edgecolor="#444")
-    ax4.axvline(100, color=cor_rup, lw=1.5, ls="--", label="Limite (100%)")
-    ax4.axvline(70,  color="#ffca28", lw=1.0, ls=":",  label="Atenção (70%)")
-    ax4.set_xlim(0, max(max(valores)*1.25, 115))
-    ax4.set_xlabel("Taxa de utilização [%]", color=cor_mut, fontsize=9)
-    ax4.tick_params(axis="y", colors=cor_txt, labelsize=10)
-    for bar, val in zip(bars, valores):
-        ax4.text(bar.get_width()+1.5, bar.get_y()+bar.get_height()/2,
-                 f"{val:.1f}%", va="center", color=cor_txt,
-                 fontsize=9, fontweight="bold")
-    ax4.legend(loc="lower right", labelcolor=cor_txt, fontsize=8,
-               facecolor="#1a1a1a", edgecolor="#333")
-
-    info = (f"Reações:  RA = {res['R_Av']:.1f} kN  |  RB = {res['R_Bv']:.1f} kN  |  "
-            f"N_pil_esq = {res['N_pil_esq']:.1f} kN  |  N_pil_dir = {res['N_pil_dir']:.1f} kN  |  "
-            f"N_viga (protensão) = {res['N_viga']:.1f} kN")
-    fig.text(0.5, 0.005, info, ha="center", color=cor_mut, fontsize=8.5)
-    return fig
-
-
-# ─── Interface ───────────────────────────────
-st.set_page_config(page_title="MASP — Análise Estrutural", layout="wide",
-                   page_icon="🏛️")
-
+st.title("🏛️ MASP — Esforços Solicitantes na Viga Principal")
 st.markdown("""
-<style>
-body, .stApp { background: #0f0f0f; color: #f0f0f0; }
-h1, h2, h3 { font-family: Georgia, serif; color: #e0c87a; }
-.stSidebar { background: #141414; }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("🏛️ MASP — Análise Estrutural Interativa")
-st.markdown("""
-*Pórtico plano isostático simplificado · Projeto de **Lina Bo Bardi** (1968)*  
-Vão livre suspenso de **70 m** suportado por vigas-caixão protendidas e quatro pilares.
+Esta simulação analisa a **Viga Principal (trecho CD)** do MASP de forma isolada, permitindo visualizar de maneira direta seus diagramas de esforços solicitantes.
 """)
 
-# Sidebar
-st.sidebar.header("⚙️ Parâmetros de Carga")
-q_ef = st.sidebar.number_input(
-    "Carga distribuída — viga superior EF [kN/m]",
-    value=132.0, step=5.0, min_value=0.0,
-    help="132 kN/m (estudo de caso real)"
+# ── Sidebar ──────────────────────────────────────────────────
+st.sidebar.header("Parâmetros de Simulação")
+
+st.sidebar.markdown("**Carregamento distribuído uniforme**")
+q = st.sidebar.number_input(
+    "q [kN/m]  — carga distribuída em toda a viga",
+    value=459.0,
+    step=10.0,
+    min_value=0.0,
+    help="Valor de referência: 459 kN/m (viga + laje)",
 )
-q_viga = st.sidebar.number_input(
-    "Carga distribuída — laje pendurada CD [kN/m]",
-    value=327.0, step=10.0, min_value=0.0,
-    help="327 kN/m (estudo de caso real)"
+
+st.sidebar.markdown("**Carregamento concentrado**")
+P = st.sidebar.number_input(
+    "P [kN]  — carga concentrada",
+    value=0.0,
+    step=500.0,
+    min_value=0.0,
+    help="Carga pontual",
 )
-N_pret = st.sidebar.number_input(
-    "Força de protensão axial [kN]",
-    value=100_000.0, step=5_000.0, min_value=0.0,
-    help="Compressão axial na viga-caixão protendida"
+a = st.sidebar.slider(
+    "a [m]  — posição de P a partir de C",
+    min_value=0.0,
+    max_value=70.0,
+    value=35.0,
+    step=0.5,
 )
-st.sidebar.markdown("---")
-P_pont = st.sidebar.number_input(
-    "Carga pontual P [kN]", value=0.0, step=500.0, min_value=0.0,
-    help="Carga extra — ex.: equipamento ou sobrecarga concentrada"
+
+st.sidebar.markdown("**Geometria**")
+L = st.sidebar.number_input(
+    "L [m]  — comprimento da viga",
+    value=70.0,
+    step=1.0,
+    min_value=5.0,
+    help="Vão do MASP: 70 m",
 )
-x_pont = st.sidebar.slider(
-    "Posição de P na viga [m]", 0.0, 70.0, 35.0, 0.5,
-    help="0 m = extremidade esquerda (C), 70 m = extremidade direita (D)"
-)
-st.sidebar.markdown("---")
-L = st.sidebar.number_input("Vão livre L [m]", value=70.0, step=1.0, min_value=10.0)
-h = st.sidebar.number_input("Altura dos pilares h [m]", value=11.0, step=0.5, min_value=3.0)
+a = min(a, float(L))
 
-x_pont = min(x_pont, float(L))
+# ── Reações de apoio ─────────────────────────────────────────
+RC, RD, HD = calcular_reacoes(q, P, a, L)
 
-# Cálculo
-res = resolver_portico(q_ef, q_viga, N_pret, P_pont, x_pont, L, h)
-cap = capacidade_ruptura(res)
+# ── Equivalente mecânico da carga distribuída ─────────────────
+F_eq = q * L  # módulo: área do diagrama de carga
+x_eq = L / 2.0  # ponto de aplicação: centro (carga uniforme)
 
-# Métricas de topo
-col_a, col_b, col_c, col_d = st.columns(4)
-col_a.metric("RA", f"{res['R_Av']:,.0f} kN")
-col_b.metric("RB", f"{res['R_Bv']:,.0f} kN")
-col_c.metric("Mmax", f"{res['M_max']:,.0f} kN·m")
-col_d.metric("Vmax", f"{res['V_max']:,.0f} kN")
-
-st.markdown("---")
-
-# Badges ELU
-c1, c2, c3 = st.columns(3)
-for col, titulo, val in [(c1,"Utiliz. Momento",cap["uso_M"]),
-                          (c2,"Utiliz. Cortante",cap["uso_V"]),
-                          (c3,"Utiliz. Normal",cap["uso_N"])]:
-    emoji = "🔴" if val>100 else ("🟡" if val>70 else "🟢")
-    col.metric(f"{emoji} {titulo}", f"{val:.1f} %")
-
-# Plot
-with st.spinner("Calculando..."):
-    fig = plot_masp(res, cap, q_ef, q_viga, N_pret, P_pont, x_pont, L, h)
+# ── 1. Visualização da Simulação (Diagramas) ─────────────────
+with st.spinner("Gerando diagramas..."):
+    fig, M_max, x_Mmax, V_C, V_D = plot_analise(q, P, a, L, RC, RD, HD)
     st.pyplot(fig)
 
-# Download PDF
-pdf_bytes = io.BytesIO()
-fig.savefig(pdf_bytes, format="pdf", facecolor="#0f0f0f")
-pdf_bytes.seek(0)
-st.download_button("📄 Baixar PDF da Análise", data=pdf_bytes,
-                   file_name="masp_analise_estrutural.pdf",
-                   mime="application/pdf")
+# ── 2. Equações Finais de Esforços Solicitantes ──────────────
+st.markdown("### 📐 Equações dos Esforços Solicitantes")
 
-# Info técnica
+if P == 0:
+    st.markdown(rf"""
+    $$N(x) = 0 \quad [kN]$$
+    $$V(x) = {RC:.2f} - {q:.2f} \cdot x \quad [kN]$$
+    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 \quad [kN\cdot m]$$
+    """)
+else:
+    st.markdown(rf"""
+    **Para o trecho $0 \le x \le {a:.1f}\text{{ m}}$:**
+    $$N(x) = 0 \quad [kN]$$
+    $$V(x) = {RC:.2f} - {q:.2f} \cdot x \quad [kN]$$
+    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 \quad [kN\cdot m]$$
+
+    **Para o trecho ${a:.1f}\text{{ m}} < x \le {L:.1f}\text{{ m}}$:**
+    $$N(x) = 0 \quad [kN]$$
+    $$V(x) = {RC:.2f} - {q:.2f} \cdot x - {P:.2f} \quad [kN]$$
+    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 - {P:.2f} \cdot (x - {a:.1f}) \quad [kN\cdot m]$$
+    """)
+
+# ── 3. Sobre a Estrutura ──────────────────────────────────────
 st.markdown("---")
-st.markdown("## 📐 Sobre a Estrutura do MASP")
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("""
-### Modelo adotado
-O **pórtico plano isostático** representa a seção transversal do MASP com:
+st.markdown("### 🏛️ Sobre a Estrutura Modelada")
+st.markdown(f"""
+**Estudo de Caso — MASP:**
+O edifício do MASP (Museu de Arte de São Paulo) é estruturalmente composto por um pórtico tridimensional complexo (composto por pilares, vigas de cobertura, tirantes e uma laje suspensa). 
 
-| Elemento | Descrição |
-|---|---|
-| Apoios A e B | Articulados — sapatas excêntricas sobre aterro |
-| Pilares AC e BD | Seções maciças de CA, h ≈ 11 m |
-| Viga CD | Viga-caixão protendida, vão livre 70 m |
-| Laje pendurada | Suspensa por tirantes à viga principal |
-| Protensão axial | 100.000 kN (compressão) |
+Nesta simulação educacional, **isolamos apenas a Viga Principal (trecho CD)**. Em Resistência dos Materiais, essa simplificação (modelando as conexões com os pilares como apoios simples e fixos nos pontos C e D) nos permite analisar diretamente os diagramas de força normal, cortante e momento fletor da viga de forma isolada e didática.
 
-As cargas de **132 kN/m** (viga superior) e **327 kN/m** (laje pendurada)  
-correspondem ao estudo de caso do pórtico isostático.
+A carga uniforme de projeto de referência de $459\text{{ kN/m}}$ engloba o peso próprio da grande viga superior de concreto ($132\text{{ kN/m}}$) somado à carga transmitida pelos tirantes da laje inferior do vão livre ($327\text{{ kN/m}}$).
 """)
-with col2:
-    st.markdown("""
-### Verificação ELU simplificada
-| Parâmetro | Valor |
-|---|---|
-| Concreto | C35 — fck = 35 MPa |
-| fcd = fck / γc | ≈ 23,3 MPa |
-| Aço | CA-50 — fyd = 434 MPa |
-| Seção da viga (b × d) | 1,5 × 3,0 m |
-| Mr (momento resistente) | calculado pela expressão simplificada |
-| Vr (cortante resistente) | τd × b × d |
-
-> ⚠️ Verificação **didática e linearizada**.  
-> Uma análise real exige modelagem em MEF conforme NBR 6118.
-
-### Grau de hiperestasia
-O modelo usa o pórtico **isostático** (Simulação 1 do estudo de caso).  
-A versão hiperestática (Simulação 2) é resolvida pelo *Método dos Esforços*.
-""")
-
 st.markdown("---")
-st.caption("Estudo de Caso MASP — Pórtico Plano Isostático | Mecânica das Estruturas · POLI-USP")
+st.caption(
+    "PEF-3208 · Fundamentos de Mecânica das Estruturas · POLI-USP · Estudo de Caso: MASP"
+)
