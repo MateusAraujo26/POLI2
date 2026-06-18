@@ -9,6 +9,31 @@ import numpy as np
 # ══════════════════════════════════════════════════════════════
 
 
+def formatar_numero(valor, dec=2):
+    try:
+        val = float(valor)
+    except (ValueError, TypeError):
+        return str(valor)
+    
+    if val.is_integer():
+        return f"{int(val):,}".replace(",", ".")
+    
+    s = f"{val:,.{dec}f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    if "." not in s:
+        return s.replace(",", ".")
+    
+    partes = s.split(".")
+    parte_inteira = partes[0].replace(",", ".")
+    parte_decimal = partes[1]
+    return f"{parte_inteira},{parte_decimal}"
+
+
+def formatar_latex(valor, dec=2):
+    return formatar_numero(valor, dec).replace(",", "{,}")
+
+
 def calcular_reacoes(q, P, a, L):
     """Reações de apoio pelas 3 equações de equilíbrio."""
     HD = 0.0  # ∑Fx = 0
@@ -40,10 +65,17 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     M_max_val = float(np.max(M))
     x_Mmax = float(xs[np.argmax(M)])
 
-    fig, axes = plt.subplots(
-        4, 1, figsize=(11, 14), gridspec_kw={"height_ratios": [2.2, 1, 1, 1]}
-    )
-    fig.patch.set_facecolor("white")
+    # Criamos figuras separadas para o modelo e cada esforço
+    fig0, ax0 = plt.subplots(figsize=(11, 4.4))
+    fig1, ax1 = plt.subplots(figsize=(11, 3.2))
+    fig2, ax2 = plt.subplots(figsize=(11, 3.2))
+    fig3, ax3 = plt.subplots(figsize=(11, 3.2))
+
+    figuras = (fig0, fig1, fig2, fig3)
+    axes = (ax0, ax1, ax2, ax3)
+
+    for fig in figuras:
+        fig.patch.set_facecolor("white")
     for ax in axes:
         ax.set_facecolor("white")
         ax.tick_params(colors="#333333", labelsize=9)
@@ -62,7 +94,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     # ── Painel 1 — Esquema estrutural ────────────────────────
     ax0 = axes[0]
     ax0.set_title(
-        "Modelo Estrutural — Viga Principal do MASP (trecho CD)",
+        "Modelo Estrutural — Viga principal do MASP (trecho CD)",
         color=COR_TXT,
         fontsize=12,
         fontweight="bold",
@@ -114,7 +146,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     ax0.text(
         L / 2,
         5.2,
-        f"q = {q:.1f} kN/m  (carga distribuída uniforme)",
+        f"q = {formatar_numero(q, 1)} kN/m  (carga distribuída uniforme)",
         ha="center",
         color="#e53935",
         fontsize=9,
@@ -137,10 +169,23 @@ def plot_analise(q, P, a, L, RC, RD, HD):
         ax0.text(
             a,
             8.7,
-            f"P = {P:.0f} kN\n(a = {a:.1f} m de C)",
+            f"P = {formatar_numero(P, 0)} kN",
             ha="center",
             color="#ff8f00",
             fontsize=9,
+            fontweight="bold",
+        )
+    else:
+        # P == 0: mostra o ponto de aplicação na viga
+        ax0.plot(a, 0, "o", color="#ff8f00", ms=8, zorder=5)
+        ax0.text(
+            a,
+            -1.8,
+            "P = 0 kN",
+            ha="center",
+            va="top",
+            color="#ff8f00",
+            fontsize=8,
             fontweight="bold",
         )
 
@@ -159,7 +204,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     ax0.text(
         0,
         -9.5,
-        f"RC = {RC:.2f} kN",
+        f"RC = {formatar_numero(RC, 2)} kN",
         color=COR_REA,
         fontsize=9,
         fontweight="bold",
@@ -180,7 +225,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     ax0.text(
         L,
         -9.5,
-        f"RD = {RD:.2f} kN",
+        f"RD = {formatar_numero(RD, 2)} kN",
         color=COR_REA,
         fontsize=9,
         fontweight="bold",
@@ -199,7 +244,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
         xytext=(L, -11.5),
         arrowprops=dict(arrowstyle="<->", color=COR_MUT, lw=1),
     )
-    ax0.text(L / 2, -13, f"L = {L:.0f} m", ha="center", color=COR_MUT, fontsize=9)
+    ax0.text(L / 2, -13, f"L = {formatar_numero(L, 0)} m", ha="center", color=COR_MUT, fontsize=9)
 
     if P > 0:
         # cota a
@@ -209,7 +254,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
             xytext=(a, -14.5),
             arrowprops=dict(arrowstyle="<->", color="#ff8f00", lw=0.9),
         )
-        ax0.text(a / 2, -16, f"a = {a:.1f} m", ha="center", color="#ff8f00", fontsize=8)
+        ax0.text(a / 2, -16, f"a = {formatar_numero(a, 1)} m", ha="center", color="#ff8f00", fontsize=8)
 
     ax0.set_xlim(-8, L + 8)
     ax0.set_ylim(-18, 11)
@@ -280,7 +325,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
             ax.text(
                 0.99,
                 0.97,
-                f"V(0⁺) = {V_C:.2f} kN  |  V(L⁻) = {V_D:.2f} kN",
+                f"V(0⁺) = {formatar_numero(V_C, 2)} kN  |  V(L⁻) = {formatar_numero(V_D, 2)} kN",
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
@@ -292,7 +337,7 @@ def plot_analise(q, P, a, L, RC, RD, HD):
             ax.text(
                 0.99,
                 0.97,
-                f"M_máx = {M_max_val:,.1f} kN·m  @ x = {x_Mmax:.2f} m",
+                f"M_máx = {formatar_numero(M_max_val, 1)} kN·m  @ x = {formatar_numero(x_Mmax, 2)} m",
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
@@ -303,8 +348,9 @@ def plot_analise(q, P, a, L, RC, RD, HD):
             ax.invert_yaxis()
             ax.set_ylabel("M [kN·m]\n(positivo ↓)", color=COR_MUT, fontsize=9)
 
-    plt.tight_layout(pad=2.5)
-    return fig, M_max_val, x_Mmax, V_C, V_D
+    for fig in figuras:
+        fig.tight_layout(pad=1.5)
+    return figuras, M_max_val, x_Mmax, V_C, V_D
 
 
 # ══════════════════════════════════════════════════════════════
@@ -312,16 +358,25 @@ def plot_analise(q, P, a, L, RC, RD, HD):
 # ══════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="MASP — Esforços Solicitantes", layout="wide", page_icon="🏛️"
+    page_title="MASP — Esforços Solicitantes", layout="wide"
 )
 
-st.title("🏛️ MASP — Esforços Solicitantes na Viga Principal")
+st.title("MASP — Esforços Solicitantes na Viga Principal")
 st.markdown("""
-Esta simulação analisa a **Viga Principal (trecho CD)** do MASP de forma isolada, permitindo visualizar de maneira direta seus diagramas de esforços solicitantes.
+Esta simulação analisa a **viga principal (trecho CD)** do MASP de forma isolada, permitindo visualizar de maneira direta seus diagramas de esforços solicitantes.
 """)
 
 # ── Sidebar ──────────────────────────────────────────────────
 st.sidebar.header("Parâmetros de Simulação")
+
+st.sidebar.markdown("**Geometria**")
+L = st.sidebar.number_input(
+    "L [m]  — comprimento da viga",
+    value=70.0,
+    step=1.0,
+    min_value=5.0,
+    help="Vão do MASP: 70 m",
+)
 
 st.sidebar.markdown("**Carregamento distribuído uniforme**")
 q = st.sidebar.number_input(
@@ -343,20 +398,10 @@ P = st.sidebar.number_input(
 a = st.sidebar.slider(
     "a [m]  — posição de P a partir de C",
     min_value=0.0,
-    max_value=70.0,
-    value=35.0,
+    max_value=float(L),
+    value=min(35.0, float(L)),
     step=0.5,
 )
-
-st.sidebar.markdown("**Geometria**")
-L = st.sidebar.number_input(
-    "L [m]  — comprimento da viga",
-    value=70.0,
-    step=1.0,
-    min_value=5.0,
-    help="Vão do MASP: 70 m",
-)
-a = min(a, float(L))
 
 # ── Reações de apoio ─────────────────────────────────────────
 RC, RD, HD = calcular_reacoes(q, P, a, L)
@@ -367,43 +412,62 @@ x_eq = L / 2.0  # ponto de aplicação: centro (carga uniforme)
 
 # ── 1. Visualização da Simulação (Diagramas) ─────────────────
 with st.spinner("Gerando diagramas..."):
-    fig, M_max, x_Mmax, V_C, V_D = plot_analise(q, P, a, L, RC, RD, HD)
-    st.pyplot(fig)
+    (fig0, fig1, fig2, fig3), M_max, x_Mmax, V_C, V_D = plot_analise(q, P, a, L, RC, RD, HD)
+    st.pyplot(fig0)
 
-# ── 2. Equações Finais de Esforços Solicitantes ──────────────
-st.markdown("### 📐 Equações dos Esforços Solicitantes")
+# ── 2. Equações e Diagramas de Esforços Solicitantes ──────────
+st.markdown("### Diagramas e Equações de Esforços Solicitantes")
 
+# 1. Esforço Normal
+st.markdown("#### 1. Esforço Normal $N(x)$")
 if P == 0:
-    st.markdown(rf"""
-    $$N(x) = 0 \quad [kN]$$
-    $$V(x) = {RC:.2f} - {q:.2f} \cdot x \quad [kN]$$
-    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 \quad [kN\cdot m]$$
-    """)
+    st.markdown(rf"$$N(x) = 0 \quad [kN]$$")
 else:
     st.markdown(rf"""
-    **Para o trecho $0 \le x \le {a:.1f}\text{{ m}}$:**
+    **Para o trecho $0 \le x \le {formatar_latex(a, 1)}\text{{ m}}$ e para ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
     $$N(x) = 0 \quad [kN]$$
-    $$V(x) = {RC:.2f} - {q:.2f} \cdot x \quad [kN]$$
-    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 \quad [kN\cdot m]$$
-
-    **Para o trecho ${a:.1f}\text{{ m}} < x \le {L:.1f}\text{{ m}}$:**
-    $$N(x) = 0 \quad [kN]$$
-    $$V(x) = {RC:.2f} - {q:.2f} \cdot x - {P:.2f} \quad [kN]$$
-    $$M(x) = {RC:.2f} \cdot x - {q/2:.2f} \cdot x^2 - {P:.2f} \cdot (x - {a:.1f}) \quad [kN\cdot m]$$
     """)
+st.pyplot(fig1)
+
+# 2. Esforço Cortante
+st.markdown("#### 2. Esforço Cortante $V(x)$")
+if P == 0:
+    st.markdown(rf"$$V(x) = {formatar_latex(RC)} - {formatar_latex(q)} \cdot x \quad [kN]$$")
+else:
+    st.markdown(rf"""
+    **Para o trecho $0 \le x \le {formatar_latex(a, 1)}\text{{ m}}$:**
+    $$V(x) = {formatar_latex(RC)} - {formatar_latex(q)} \cdot x \quad [kN]$$
+
+    **Para o trecho ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
+    $$V(x) = {formatar_latex(RC)} - {formatar_latex(q)} \cdot x - {formatar_latex(P)} \quad [kN]$$
+    """)
+st.pyplot(fig2)
+
+# 3. Momento Fletor
+st.markdown("#### 3. Momento Fletor $M(x)$")
+if P == 0:
+    st.markdown(rf"$$M(x) = {formatar_latex(RC)} \cdot x - {formatar_latex(q/2)} \cdot x^2 \quad [kN\cdot m]$$")
+else:
+    st.markdown(rf"""
+    **Para o trecho $0 \le x \le {formatar_latex(a, 1)}\text{{ m}}$:**
+    $$M(x) = {formatar_latex(RC)} \cdot x - {formatar_latex(q/2)} \cdot x^2 \quad [kN\cdot m]$$
+
+    **Para o trecho ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
+    $$M(x) = {formatar_latex(RC)} \cdot x - {formatar_latex(q/2)} \cdot x^2 - {formatar_latex(P)} \cdot (x - {formatar_latex(a, 1)}) \quad [kN\cdot m]$$
+    """)
+st.pyplot(fig3)
 
 # ── 3. Sobre a Estrutura ──────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🏛️ Sobre a Estrutura Modelada")
-st.markdown(f"""
-**Estudo de Caso — MASP:**
-O edifício do MASP (Museu de Arte de São Paulo) é estruturalmente composto por um pórtico tridimensional complexo (composto por pilares, vigas de cobertura, tirantes e uma laje suspensa). 
+st.markdown("### Sobre a Estrutura Modelada")
+st.markdown(r"""
+O edifício do MASP (Museu de Arte de São Paulo) é estruturalmente composto por um pórtico tridimensional complexo -- composto por pilares, vigas de cobertura, tirantes e uma laje suspensa. 
 
-Nesta simulação educacional, **isolamos apenas a Viga Principal (trecho CD)**. Em Resistência dos Materiais, essa simplificação (modelando as conexões com os pilares como apoios simples e fixos nos pontos C e D) nos permite analisar diretamente os diagramas de força normal, cortante e momento fletor da viga de forma isolada e didática.
+Nesta simulação educacional, **isolamos apenas a viga principal (trecho CD)**. Essa simplificação, modelando as conexões com os pilares como apoios simples e fixos nos pontos C e D, nos permite analisar diretamente os diagramas de força normal, cortante e momento fletor da viga de forma isolada e didática.
 
-A carga uniforme de projeto de referência de $459\text{{ kN/m}}$ engloba o peso próprio da grande viga superior de concreto ($132\text{{ kN/m}}$) somado à carga transmitida pelos tirantes da laje inferior do vão livre ($327\text{{ kN/m}}$).
+A carga uniforme de projeto de referência de $459\text{ kN/m}$ engloba o peso próprio da grande viga superior de concreto $(132\text{ kN/m})$ somado à carga transmitida pelos tirantes da laje inferior do vão livre $(327\text{ kN/m})$.
 """)
 st.markdown("---")
 st.caption(
-    "PEF-3208 · Fundamentos de Mecânica das Estruturas · POLI-USP · Estudo de Caso: MASP"
+    "PEF-3208 · Fundamentos de Mecânica das Estruturas  --  POLI-USP · MASP"
 )
