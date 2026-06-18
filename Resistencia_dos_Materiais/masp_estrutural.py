@@ -1,7 +1,9 @@
 import streamlit as st
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import matplotlib.patches as patches
 import numpy as np
+import io
+import base64
 
 # ══════════════════════════════════════════════════════════════
 #  MASP — Esforços Solicitantes na Viga Principal
@@ -57,7 +59,7 @@ def esforcos_solicitantes(x, RC, q, P, a):
 
 
 def plot_analise(q, P, a, L, RC, RD, HD):
-    xs = np.linspace(0, L, 2000)
+    xs = np.linspace(0, L, 500)
     N, V, M = esforcos_solicitantes(xs, RC, q, P, a)
 
     V_C = RC  # cortante imediatamente após C
@@ -66,10 +68,15 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     x_Mmax = float(xs[np.argmax(M)])
 
     # Criamos figuras separadas para o modelo e cada esforço
-    fig0, ax0 = plt.subplots(figsize=(11, 4.4))
-    fig1, ax1 = plt.subplots(figsize=(11, 3.2))
-    fig2, ax2 = plt.subplots(figsize=(11, 3.2))
-    fig3, ax3 = plt.subplots(figsize=(11, 3.2))
+    # Usando Figure em vez de plt.subplots() para evitar memory leaks
+    fig0 = Figure(figsize=(11, 4.4))
+    ax0 = fig0.subplots()
+    fig1 = Figure(figsize=(11, 3.2))
+    ax1 = fig1.subplots()
+    fig2 = Figure(figsize=(11, 3.2))
+    ax2 = fig2.subplots()
+    fig3 = Figure(figsize=(11, 3.2))
+    ax3 = fig3.subplots()
 
     figuras = (fig0, fig1, fig2, fig3)
     axes = (ax0, ax1, ax2, ax3)
@@ -353,6 +360,26 @@ def plot_analise(q, P, a, L, RC, RD, HD):
     return figuras, M_max_val, x_Mmax, V_C, V_D
 
 
+@st.cache_data(max_entries=50, show_spinner=False)
+def gerar_diagramas_svg(q, P, a, L, RC, RD, HD):
+    figuras, M_max_val, x_Mmax, V_C, V_D = plot_analise(q, P, a, L, RC, RD, HD)
+    
+    svgs = []
+    for fig in figuras:
+        buf = io.BytesIO()
+        fig.savefig(buf, format="svg", bbox_inches="tight")
+        svgs.append(buf.getvalue().decode('utf-8'))
+        fig.clear()
+        
+    return svgs, M_max_val, x_Mmax, V_C, V_D
+
+
+def renderizar_svg(svg_str):
+    b64 = base64.b64encode(svg_str.encode('utf-8')).decode("utf-8")
+    html = f'<img src="data:image/svg+xml;base64,{b64}" width="100%"/>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # ══════════════════════════════════════════════════════════════
 #  Interface Streamlit
 # ══════════════════════════════════════════════════════════════
@@ -412,8 +439,8 @@ x_eq = L / 2.0  # ponto de aplicação: centro (carga uniforme)
 
 # ── 1. Visualização da Simulação (Diagramas) ─────────────────
 with st.spinner("Gerando diagramas..."):
-    (fig0, fig1, fig2, fig3), M_max, x_Mmax, V_C, V_D = plot_analise(q, P, a, L, RC, RD, HD)
-    st.pyplot(fig0)
+    svgs, M_max, x_Mmax, V_C, V_D = gerar_diagramas_svg(q, P, a, L, RC, RD, HD)
+    renderizar_svg(svgs[0])
 
 # ── 2. Equações e Diagramas de Esforços Solicitantes ──────────
 st.markdown("### Diagramas e Equações de Esforços Solicitantes")
@@ -427,7 +454,7 @@ else:
     **Para o trecho $0 \le x \le {formatar_latex(a, 1)}\text{{ m}}$ e para ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
     $$N(x) = 0 \quad [kN]$$
     """)
-st.pyplot(fig1)
+renderizar_svg(svgs[1])
 
 # 2. Esforço Cortante
 st.markdown("#### 2. Esforço Cortante $V(x)$")
@@ -441,7 +468,7 @@ else:
     **Para o trecho ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
     $$V(x) = {formatar_latex(RC)} - {formatar_latex(q)} \cdot x - {formatar_latex(P)} \quad [kN]$$
     """)
-st.pyplot(fig2)
+renderizar_svg(svgs[2])
 
 # 3. Momento Fletor
 st.markdown("#### 3. Momento Fletor $M(x)$")
@@ -455,7 +482,7 @@ else:
     **Para o trecho ${formatar_latex(a, 1)}\text{{ m}} < x \le {formatar_latex(L, 1)}\text{{ m}}$:**
     $$M(x) = {formatar_latex(RC)} \cdot x - {formatar_latex(q/2)} \cdot x^2 - {formatar_latex(P)} \cdot (x - {formatar_latex(a, 1)}) \quad [kN\cdot m]$$
     """)
-st.pyplot(fig3)
+renderizar_svg(svgs[3])
 
 # ── 3. Sobre a Estrutura ──────────────────────────────────────
 st.markdown("---")
